@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+.env
+.git/
+.gitignore
+*.md
+tests/
+test_workflow.py
+annotated/
+
+# OS
+.DS_Store
+Thumbs.db

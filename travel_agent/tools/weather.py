@@ -1,6 +1,8 @@
 import random
 from typing import Dict, Any
+from ..agent.cache import global_tool_cache
 
+@global_tool_cache.cached
 def get_forecast(location: str, date: str) -> Dict[str, Any]:
     """
     Get weather forecast for a location on a specific date.

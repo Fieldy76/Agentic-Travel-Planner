@@ -1,13 +1,21 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
+import logging
+import time
 from .llm import LLMProvider
 from ..mcp.server import MCPServer
+from .memory import AgentMemory, InMemoryMemory
+from ..config import setup_logging
+
+# Ensure logging is configured
+setup_logging()
+logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
-    def __init__(self, llm: LLMProvider, server: MCPServer):
+    def __init__(self, llm: LLMProvider, server: MCPServer, memory: Optional[AgentMemory] = None):
         self.llm = llm
         self.server = server
-        self.messages: List[Dict[str, Any]] = []
+        self.memory = memory or InMemoryMemory()
         self.system_prompt = """You are a helpful travel assistant. 
         You have access to tools to search flights, book flights, rent cars, check weather, and process payments.
         
@@ -19,28 +27,46 @@ class AgentOrchestrator:
         Always check the weather before finalizing a plan.
         """
 
-    def run(self, user_input: str):
+    def run(self, user_input: str, request_id: str = "default"):
         """Run one turn of the agent loop."""
-        self.messages.append({"role": "user", "content": user_input})
+        logger.info(f"Starting agent turn", extra={"request_id": request_id})
+        
+        # Add user message to memory
+        self.memory.add_message({"role": "user", "content": user_input})
         
         # Main Loop
-        while True:
+        max_turns = 10
+        current_turn = 0
+        
+        while current_turn < max_turns:
+            current_turn += 1
+            
             # 1. Get available tools
             tools = self.server.list_tools()
             
             # 2. Call LLM
-            print("Thinking...")
-            response = self.llm.call_tool(self.messages, tools)
+            logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
+            
+            # Construct full history with system prompt
+            messages = [{"role": "system", "content": self.system_prompt}] + self.memory.get_messages()
+            
+            try:
+                response = self.llm.call_tool(messages, tools)
+            except Exception as e:
+                logger.error(f"LLM call failed: {e}", extra={"request_id": request_id})
+                break
             
             content = response.get("content")
             tool_calls = response.get("tool_calls")
             
             if content:
+                logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
+                self.memory.add_message({"role": "assistant", "content": content})
                 print(f"Agent: {content}")
-                self.messages.append({"role": "assistant", "content": content})
                 
             if not tool_calls:
                 # No more tools to call, we are done with this turn
+                logger.info("No tool calls, turn complete", extra={"request_id": request_id})
                 break
                 
             # 3. Execute Tools
@@ -49,15 +75,33 @@ class AgentOrchestrator:
                 tool_args = tool_call["arguments"]
                 tool_id = tool_call["id"]
                 
+                logger.info(f"Executing tool: {tool_name}", extra={"request_id": request_id, "tool_args": tool_args})
                 print(f"Calling Tool: {tool_name} with {tool_args}")
                 
-                result = self.server.call_tool(tool_name, tool_args)
+                # Retry logic
+                max_retries = 3
+                result_text = ""
+                is_error = False
                 
-                result_text = result.content[0]["text"]
+                for attempt in range(max_retries):
+                    try:
+                        result = self.server.call_tool(tool_name, tool_args)
+                        result_text = result.content[0]["text"]
+                        is_error = result.isError
+                        break # Success
+                    except Exception as e:
+                        logger.warning(f"Tool execution failed (attempt {attempt+1}/{max_retries}): {e}", extra={"request_id": request_id})
+                        if attempt == max_retries - 1:
+                            result_text = f"Error executing tool {tool_name}: {str(e)}"
+                            is_error = True
+                        else:
+                            time.sleep(1 * (attempt + 1)) # Exponential backoff
+                
+                logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
                 print(f"Tool Result: {result_text}")
                 
                 # Append standard tool result message
-                self.messages.append({
+                self.memory.add_message({
                     "role": "tool",
                     "tool_call_id": tool_id,
                     "name": tool_name,

@@ -3,3 +3,4 @@ anthropic
 google-generativeai
 python-dotenv
 httpx
+pydantic

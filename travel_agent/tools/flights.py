@@ -1,6 +1,8 @@
 import random
 from typing import List, Dict, Any
+from ..agent.cache import global_tool_cache
 
+@global_tool_cache.cached
 def search_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
     """
     Search for flights between origin and destination on a specific date.

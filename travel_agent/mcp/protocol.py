@@ -1,74 +1,46 @@
 from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass
-import json
+from pydantic import BaseModel, Field
 
 # JSON-RPC 2.0 Constants
 JSONRPC_VERSION = "2.0"
 
-@dataclass
-class JsonRpcRequest:
+class JsonRpcRequest(BaseModel):
     method: str
     params: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
-    jsonrpc: str = JSONRPC_VERSION
+    jsonrpc: str = Field(default=JSONRPC_VERSION, pattern=r"^2\.0$")
 
     def to_dict(self) -> Dict[str, Any]:
-        data = {
-            "jsonrpc": self.jsonrpc,
-            "method": self.method,
-        }
-        if self.params is not None:
-            data["params"] = self.params
-        if self.id is not None:
-            data["id"] = self.id
-        return data
+        return self.model_dump(exclude_none=True)
 
-@dataclass
-class JsonRpcResponse:
+class JsonRpcResponse(BaseModel):
     result: Any = None
     error: Optional[Dict[str, Any]] = None
     id: Optional[Union[str, int]] = None
-    jsonrpc: str = JSONRPC_VERSION
+    jsonrpc: str = Field(default=JSONRPC_VERSION, pattern=r"^2\.0$")
 
     def to_dict(self) -> Dict[str, Any]:
-        data = {
-            "jsonrpc": self.jsonrpc,
-            "id": self.id
-        }
-        if self.error:
-            data["error"] = self.error
-        else:
-            data["result"] = self.result
-        return data
+        return self.model_dump(exclude_none=True)
 
 # MCP Specific Structures
 
-@dataclass
-class Tool:
+class Tool(BaseModel):
     name: str
     description: str
     inputSchema: Dict[str, Any]
 
-@dataclass
-class CallToolRequest:
+class CallToolRequest(BaseModel):
     name: str
     arguments: Dict[str, Any]
 
-@dataclass
-class CallToolResult:
+class CallToolResult(BaseModel):
     content: List[Dict[str, Any]]
     isError: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "content": self.content,
-            "isError": self.isError
-        }
+        return self.model_dump()
 
 # Helper to create a tool definition
 def create_tool_definition(name: str, description: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "name": name,
-        "description": description,
-        "inputSchema": parameters
-    }
+    tool = Tool(name=name, description=description, inputSchema=parameters)
+    return tool.model_dump()

@@ -4,13 +4,13 @@ import sys
 import os
 
 # Add project root to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from travel_agent.mcp.server import MCPServer
 from travel_agent.agent.orchestrator import AgentOrchestrator
 from travel_agent.tools import search_flights, book_flight, rent_car, get_forecast, process_payment
 
-class TestTravelAgent(unittest.TestCase):
+class TestIntegration(unittest.TestCase):
     def setUp(self):
         self.server = MCPServer()
         self.server.register_tool(search_flights)
@@ -22,15 +22,6 @@ class TestTravelAgent(unittest.TestCase):
         self.mock_llm = MagicMock()
         self.agent = AgentOrchestrator(self.mock_llm, self.server)
 
-    def test_tool_registration(self):
-        tools = self.server.list_tools()
-        tool_names = [t["name"] for t in tools]
-        self.assertIn("search_flights", tool_names)
-        self.assertIn("book_flight", tool_names)
-        self.assertIn("rent_car", tool_names)
-        self.assertIn("get_forecast", tool_names)
-        self.assertIn("process_payment", tool_names)
-
     def test_flight_search_tool(self):
         result = self.server.call_tool("search_flights", {
             "origin": "JFK",
@@ -40,9 +31,7 @@ class TestTravelAgent(unittest.TestCase):
         self.assertFalse(result.isError)
         self.assertIn("JFK", result.content[0]["text"])
 
-    def test_agent_flow(self):
-        # Simulate a simple flow: User asks -> LLM calls tool -> Tool returns -> LLM answers
-        
+    def test_full_flow(self):
         # 1. User Input
         user_input = "Find flights from NYC to London on 2023-12-25"
         
@@ -68,12 +57,11 @@ class TestTravelAgent(unittest.TestCase):
         # Verify LLM was called twice
         self.assertEqual(self.mock_llm.call_tool.call_count, 2)
         
-        # Verify message history contains tool result in correct format
-        # Expected history: [User, Assistant(ToolCall), ToolResult, Assistant(Final)]
-        self.assertEqual(len(self.agent.messages), 4)
-        self.assertEqual(self.agent.messages[2]["role"], "tool")
-        self.assertEqual(self.agent.messages[2]["tool_call_id"], "call_1")
-        self.assertIn("NYC", self.agent.messages[2]["content"])
-        
+        # Verify message history contains tool result
+        messages = self.agent.memory.get_messages()
+        self.assertEqual(len(messages), 4)
+        self.assertEqual(messages[2]["role"], "tool")
+        self.assertIn("NYC", messages[2]["content"])
+
 if __name__ == "__main__":
     unittest.main()

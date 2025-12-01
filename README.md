@@ -4,6 +4,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 
 ## 🚀 Features
 
+### Core Capabilities
 - **Framework-Free**: Built from scratch using standard Python libraries, demonstrating a deep understanding of agentic architectures.
 - **MCP Integration**: Implements a custom, lightweight MCP Client/Server architecture for standardized tool communication.
 - **Multi-LLM Support**: Seamlessly switch between OpenAI, Anthropic, and Google Gemini models.
@@ -13,6 +14,15 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     - ☀️ **Weather Forecast**: Check conditions before you travel.
     - 💳 **Payments**: Secure payment processing simulation.
 - **Interactive CLI**: A simple yet powerful command-line interface to interact with the agent.
+
+### Production-Ready Features
+- **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
+- **✅ Pydantic Validation**: Strict type validation for all MCP protocol messages and tool inputs/outputs.
+- **🔄 Error Handling & Retries**: Exponential backoff retry logic for resilient tool execution.
+- **💾 State Management**: Abstract memory interface with in-memory implementation for conversation persistence.
+- **⚡ Performance Caching**: TTL-based caching for expensive API calls (flights, weather).
+- **🧪 Comprehensive Testing**: 9 unit and integration tests covering protocol validation, orchestrator logic, and full workflows.
+- **🐳 Docker Support**: Multi-stage Dockerfile with security best practices (non-root user).
 
 ## 🛠️ Installation
 
@@ -68,10 +78,19 @@ Agent: Great! Let me check flights and weather for you...
 
 ## 🧪 Testing
 
-Run the automated verification suite:
+Run the comprehensive test suite:
 ```bash
-python test_workflow.py
+# Activate virtual environment first
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Run all tests
+python -m unittest discover tests -v
 ```
+
+**Test Coverage**:
+- Protocol validation (Pydantic models)
+- Orchestrator logic (error handling, retries, memory)
+- Full integration workflows
 
 ## 📂 Project Structure
 
@@ -92,6 +111,19 @@ travel_agent/
     └── payment.py
 ```
 
+## 🐳 Deployment
+
+Build and run with Docker:
+```bash
+# Build the image
+docker build -t travel-agent .
+
+# Run the container
+docker run --env-file .env travel-agent
+```
+
+The Docker image uses a multi-stage build and runs as a non-root user for security.
+
 ## 📚 Educational Resources
 
 For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every line of code in this directory is commented to explain its purpose and functionality.
@@ -104,6 +136,6 @@ For those learning about agentic workflows, I have included a fully **annotated 
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## license
+## License
 
 [MIT](LICENSE)
