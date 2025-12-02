@@ -6,13 +6,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusIndicator = document.getElementById('status-indicator');
     const statusDot = statusIndicator.querySelector('.status-dot');
     const statusText = statusIndicator.querySelector('.status-text');
+    const historyToggle = document.getElementById('history-toggle');
+    const historySidebar = document.getElementById('history-sidebar');
+    const historyList = document.getElementById('history-list');
+    const clearHistoryBtn = document.getElementById('clear-history');
 
     let isProcessing = false;
+    let searchHistory = loadSearchHistory();
+
+    // Initialize history display
+    renderHistory();
+
+    // Toggle history sidebar
+    historyToggle.addEventListener('click', () => {
+        historySidebar.classList.toggle('collapsed');
+    });
+
+    // Clear history
+    clearHistoryBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear all search history?')) {
+            searchHistory = [];
+            saveSearchHistory();
+            renderHistory();
+        }
+    });
 
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const message = userInput.value.trim();
         if (!message || isProcessing) return;
+
+        // Add to search history
+        addToHistory(message);
 
         // Add User Message
         appendMessage('user', message);
@@ -153,5 +178,90 @@ document.addEventListener('DOMContentLoaded', () => {
             statusText.textContent = 'Ready';
             userInput.focus();
         }
+    }
+
+    // Search History Functions
+    function loadSearchHistory() {
+        try {
+            const saved = localStorage.getItem('travelSearchHistory');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            console.error('Error loading search history:', e);
+            return [];
+        }
+    }
+
+    function saveSearchHistory() {
+        try {
+            localStorage.setItem('travelSearchHistory', JSON.stringify(searchHistory));
+        } catch (e) {
+            console.error('Error saving search history:', e);
+        }
+    }
+
+    function addToHistory(message) {
+        const historyItem = {
+            text: message,
+            timestamp: new Date().toISOString()
+        };
+
+        // Add to beginning (most recent first)
+        searchHistory.unshift(historyItem);
+
+        // Limit history to 50 items
+        if (searchHistory.length > 50) {
+            searchHistory = searchHistory.slice(0, 50);
+        }
+
+        saveSearchHistory();
+        renderHistory();
+    }
+
+    function renderHistory() {
+        if (searchHistory.length === 0) {
+            historyList.innerHTML = '<div class="history-empty">No search history yet</div>';
+            return;
+        }
+
+        historyList.innerHTML = '';
+        searchHistory.forEach((item, index) => {
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.innerHTML = `
+                <div class="history-item-text">${escapeHtml(item.text)}</div>
+                <div class="history-item-time">${formatTimestamp(item.timestamp)}</div>
+            `;
+
+            historyItem.addEventListener('click', () => {
+                userInput.value = item.text;
+                userInput.focus();
+                // Optionally auto-submit
+                // chatForm.dispatchEvent(new Event('submit'));
+            });
+
+            historyList.appendChild(historyItem);
+        });
+    }
+
+    function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+
+        return date.toLocaleDateString();
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 });

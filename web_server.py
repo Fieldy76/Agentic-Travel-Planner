@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Load environment variables
+load_dotenv()
+
 from travel_agent.config import Config
 from travel_agent.agent.llm import get_llm_provider
 from travel_agent.mcp.mcp_server import MCPServer
@@ -20,9 +23,6 @@ from travel_agent.tools import (
     process_payment
 )
 
-# Load environment variables
-load_dotenv()
-
 app = Flask(__name__, static_folder='static')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,32 +30,60 @@ logger = logging.getLogger(__name__)
 # Initialize Agent Global Variable
 agent = None
 
+
 def initialize_agent():
     global agent
-    if not Config.validate():
-        logger.error("Config validation failed")
-        return False
-
-    provider_name = os.getenv("LLM_PROVIDER", "openai")
-    api_key = ""
     
-    if provider_name == "openai":
-        api_key = Config.OPENAI_API_KEY
-    elif provider_name == "anthropic":
-        api_key = Config.ANTHROPIC_API_KEY
-    elif provider_name == "google":
-        api_key = Config.GOOGLE_API_KEY
+    # La validazione della configurazione dovrebbe ora superare il test se ANTHROPIC_API_KEY è presente.
+    if not Config.validate(): 
+        logger.error("Config validation failed.")
+        return False
+    
+    # 1. SETUP: Inizializza i valori per il routing
+    provider_name = os.getenv("LLM_PROVIDER", "ANTHROPIC").lower()
+    api_key = None
+    
+    # Dizionario di tutti i provider disponibili in ordine di fallback
+    # Puoi cambiare l'ordine a seconda delle tue preferenze
+    provider_map = {
+        "anthropic": Config.ANTHROPIC_API_KEY,
+        "openai": Config.OPENAI_API_KEY,
+        "google": Config.GOOGLE_API_KEY,
+    }
+
+    # 2. LOGICA DI ROUTING FLESSIBILE: Cerca la chiave del provider preferito
+    
+    # Tenta prima il provider specificato in LLM_PROVIDER
+    if provider_name in provider_map and provider_map[provider_name]:
+        api_key = provider_map[provider_name]
         
+    # Se la chiave preferita manca, cerca un fallback valido
     if not api_key:
-        logger.error(f"API Key for {provider_name} is missing.")
+        logger.warning(
+            f"La chiave API per il provider preferito ({provider_name.upper()}) è mancante o vuota. Ricerca di provider alternativi..."
+        )
+        
+        # Iterazione su tutti i provider per il primo con una chiave valida
+        for name, key in provider_map.items():
+            if key:
+                provider_name = name
+                api_key = key
+                logger.info(f"Trovata chiave valida per il provider di fallback: {provider_name.upper()}")
+                break # Esci dal ciclo appena ne trovi uno
+
+    # 3. INIZIALIZZAZIONE DELL'AGENTE (Solo se abbiamo una chiave valida)
+    if not api_key:
+        logger.error("Nessuna chiave LLM API valida trovata per inizializzare l'agente reale.")
         return False
 
     try:
+        # Chiama il tuo router LLM con il provider e la chiave trovati
         llm = get_llm_provider(provider_name, api_key)
     except ImportError as e:
-        logger.error(f"Error initializing LLM: {e}")
+        logger.error(f"Errore nell'inizializzazione dell'LLM (SDK mancante?): {e}")
         return False
 
+    # Il resto della tua logica di inizializzazione
     server = MCPServer()
     server.register_tool(search_flights)
     server.register_tool(book_flight)
@@ -64,9 +92,8 @@ def initialize_agent():
     server.register_tool(process_payment)
 
     agent = AgentOrchestrator(llm, server)
-    logger.info(f"Agent initialized with {provider_name}")
+    logger.info(f"Agente inizializzato con successo usando: {provider_name.upper()}")
     return True
-
 @app.route('/')
 def index():
     return send_from_directory('static', 'index.html')

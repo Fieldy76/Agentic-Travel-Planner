@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import json
 
 # Load environment variables from .env file
-load_dotenv()
+# load_dotenv()
 
 class Config:
     """Configuration management for the Travel Agent."""

@@ -12,20 +12,40 @@
 <body>
     <div class="app-container">
         <header class="app-header">
-            <h1>Agentic Travel Planner</h1>
+            <div class="header-left">
+                <button id="history-toggle" class="history-toggle" title="Toggle Search History">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    History
+                </button>
+                <h1>Agentic Travel Planner</h1>
+            </div>
             <div class="status-indicator" id="status-indicator">
                 <span class="status-dot"></span>
                 <span class="status-text">Ready</span>
             </div>
         </header>
 
-        <main class="chat-container" id="chat-container">
-            <div class="welcome-message">
-                <h2>Where do you want to go?</h2>
-                <p>I can help you plan your trip, book flights, rent cars, and check the weather.</p>
-            </div>
-            <!-- Messages will be inserted here -->
-        </main>
+        <div class="content-wrapper">
+            <aside class="history-sidebar" id="history-sidebar">
+                <div class="history-header">
+                    <h3>Search History</h3>
+                    <button id="clear-history" class="clear-history-btn" title="Clear all history">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </div>
+                <div class="history-list" id="history-list">
+                    <div class="history-empty">No search history yet</div>
+                </div>
+            </aside>
+
+            <main class="chat-container" id="chat-container">
+                <div class="welcome-message">
+                    <h2>Where do you want to go?</h2>
+                    <p>I can help you plan your trip, book flights, rent cars, and check the weather.</p>
+                </div>
+                <!-- Messages will be inserted here -->
+            </main>
+        </div>
 
         <footer class="input-area">
             <form id="chat-form">

@@ -14,6 +14,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     - ☀️ **Weather Forecast**: Check conditions before you travel.
     - 💳 **Payments**: Secure payment processing simulation.
 - **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
+- **📜 Search History**: Chronological history of all searches with localStorage persistence, allowing quick access to previous queries.
 
 ### Production-Ready Features
 - **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
@@ -86,6 +87,20 @@ Agent: I'd love to help you plan your trip to Tokyo! When exactly are you thinki
 You: From December 10th to December 20th.
 Agent: Great! Let me check flights and weather for you...
 ```
+
+### Web UI Features
+
+The web interface includes:
+- **💬 Chat Interface**: Modern, responsive chat UI with message history
+- **📜 Search History Sidebar**: 
+  - View all previous searches in chronological order
+  - Toggle visibility with the "History" button
+  - Click any history item to reuse that search
+  - Smart timestamps (e.g., "5m ago", "2h ago", "3d ago")
+  - Clear all history with confirmation
+  - Persistent storage using localStorage (up to 50 searches)
+- **🎨 Beautiful Design**: Dark mode with smooth animations and premium aesthetics
+- **📊 Real-time Status**: Live updates as the agent processes tools
 
 ## 🧪 Testing
 
