@@ -1,0 +1,451 @@
+:root {
+    /* Define CSS variables for consistent theming */
+    --bg-color: #0f172a;
+    /* Dark background color for the body */
+    --chat-bg: #1e293b;
+    /* Slightly lighter background for chat elements */
+    --primary-color: #3b82f6;
+    /* Primary blue color for accents and buttons */
+    --primary-hover: #2563eb;
+    /* Darker blue for hover states */
+    --text-color: #f8fafc;
+    /* Light text color for readability on dark backgrounds */
+    --text-secondary: #94a3b8;
+    /* Muted text color for secondary information */
+    --user-msg-bg: #3b82f6;
+    /* Background color for user messages */
+    --agent-msg-bg: #334155;
+    /* Background color for agent messages */
+    --tool-bg: #1e293b;
+    /* Background color for tool call blocks */
+    --border-color: #334155;
+    /* Border color for separation lines */
+}
+
+* {
+    /* Reset default box-sizing, margin, and padding for all elements */
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    /* Use the Inter font */
+    background-color: var(--bg-color);
+    /* Apply background color */
+    color: var(--text-color);
+    /* Apply text color */
+    height: 100vh;
+    /* Full viewport height */
+    display: flex;
+    /* Use flexbox for layout */
+    justify-content: center;
+    /* Center content horizontally */
+    overflow: hidden;
+    /* Prevent body scroll, handle scrolling in containers */
+}
+
+.app-container {
+    width: 100%;
+    /* Full width */
+    max-width: 900px;
+    /* Maximum width for larger screens */
+    height: 100%;
+    /* Full height */
+    display: flex;
+    /* Use flexbox */
+    flex-direction: column;
+    /* Stack children vertically */
+    background-color: var(--bg-color);
+    /* Background color */
+    position: relative;
+    /* Relative positioning for children */
+}
+
+/* Header Styles */
+.app-header {
+    padding: 1rem 1.5rem;
+    /* Padding around header content */
+    border-bottom: 1px solid var(--border-color);
+    /* Bottom border */
+    display: flex;
+    /* Flexbox layout */
+    justify-content: space-between;
+    /* Space between title and status */
+    align-items: center;
+    /* Center items vertically */
+    background: rgba(15, 23, 42, 0.8);
+    /* Semi-transparent background */
+    backdrop-filter: blur(10px);
+    /* Blur effect for glassmorphism */
+    z-index: 10;
+    /* Ensure header stays on top */
+}
+
+.app-header h1 {
+    font-size: 1.25rem;
+    /* Font size for title */
+    font-weight: 600;
+    /* Semi-bold weight */
+}
+
+.status-indicator {
+    display: flex;
+    /* Flexbox layout */
+    align-items: center;
+    /* Center items vertically */
+    gap: 0.5rem;
+    /* Space between dot and text */
+    font-size: 0.875rem;
+    /* Smaller font size */
+    color: var(--text-secondary);
+    /* Secondary text color */
+}
+
+.status-dot {
+    width: 8px;
+    /* Dot width */
+    height: 8px;
+    /* Dot height */
+    border-radius: 50%;
+    /* Circular shape */
+    background-color: #22c55e;
+    /* Green color for 'Ready' */
+    box-shadow: 0 0 8px #22c55e;
+    /* Glowing effect */
+}
+
+.status-dot.busy {
+    background-color: #eab308;
+    /* Yellow color for 'Busy' */
+    box-shadow: 0 0 8px #eab308;
+    /* Glowing effect */
+}
+
+/* Chat Area Styles */
+.chat-container {
+    flex: 1;
+    /* Take up remaining vertical space */
+    overflow-y: auto;
+    /* Enable vertical scrolling */
+    padding: 1.5rem;
+    /* Padding inside chat area */
+    display: flex;
+    /* Flexbox layout */
+    flex-direction: column;
+    /* Stack messages vertically */
+    gap: 1.5rem;
+    /* Space between messages */
+    scroll-behavior: smooth;
+    /* Smooth scrolling effect */
+}
+
+.welcome-message {
+    text-align: center;
+    /* Center text */
+    margin-top: 2rem;
+    /* Top margin */
+    color: var(--text-secondary);
+    /* Secondary text color */
+}
+
+.welcome-message h2 {
+    color: var(--text-color);
+    /* Primary text color for heading */
+    margin-bottom: 0.5rem;
+    /* Bottom margin */
+}
+
+/* Message Styles */
+.message {
+    display: flex;
+    /* Flexbox layout */
+    flex-direction: column;
+    /* Stack content vertically */
+    max-width: 80%;
+    /* Limit message width */
+    animation: fadeIn 0.3s ease-out;
+    /* Fade-in animation */
+}
+
+.message.user {
+    align-self: flex-end;
+    /* Align user messages to the right */
+    align-items: flex-end;
+    /* Align content to the right */
+}
+
+.message.assistant {
+    align-self: flex-start;
+    /* Align assistant messages to the left */
+    align-items: flex-start;
+    /* Align content to the left */
+}
+
+.message-content {
+    padding: 0.75rem 1rem;
+    /* Padding inside message bubble */
+    border-radius: 1rem;
+    /* Rounded corners */
+    line-height: 1.5;
+    /* Line height for readability */
+    font-size: 0.95rem;
+    /* Font size */
+}
+
+.message.user .message-content {
+    background-color: var(--user-msg-bg);
+    /* User message background */
+    color: white;
+    /* White text */
+    border-bottom-right-radius: 0.25rem;
+    /* Sharp corner for visual cue */
+}
+
+.message.assistant .message-content {
+    background-color: var(--agent-msg-bg);
+    /* Assistant message background */
+    color: var(--text-color);
+    /* Text color */
+    border-bottom-left-radius: 0.25rem;
+    /* Sharp corner for visual cue */
+}
+
+/* Tool Call Styles */
+.tool-call {
+    align-self: center;
+    /* Center tool calls */
+    background-color: var(--tool-bg);
+    /* Background color */
+    border: 1px solid var(--border-color);
+    /* Border */
+    border-radius: 0.5rem;
+    /* Rounded corners */
+    padding: 0.75rem;
+    /* Padding */
+    margin: 0.5rem 0;
+    /* Vertical margin */
+    width: 100%;
+    /* Full width */
+    max-width: 600px;
+    /* Max width constraint */
+    font-size: 0.85rem;
+    /* Smaller font size */
+    color: var(--text-secondary);
+    /* Secondary text color */
+    display: flex;
+    /* Flexbox layout */
+    align-items: center;
+    /* Center items vertically */
+    gap: 0.75rem;
+    /* Space between items */
+    animation: slideIn 0.3s ease-out;
+    /* Slide-in animation */
+}
+
+.tool-icon {
+    width: 24px;
+    /* Icon width */
+    height: 24px;
+    /* Icon height */
+    display: flex;
+    /* Flexbox layout */
+    align-items: center;
+    /* Center icon */
+    justify-content: center;
+    /* Center icon */
+    background-color: rgba(59, 130, 246, 0.1);
+    /* Light blue background */
+    border-radius: 6px;
+    /* Rounded corners */
+    color: var(--primary-color);
+    /* Icon color */
+}
+
+.tool-details {
+    flex: 1;
+    /* Take up remaining space */
+}
+
+.tool-name {
+    font-weight: 600;
+    /* Semi-bold */
+    color: var(--text-color);
+    /* Text color */
+    margin-bottom: 0.1rem;
+    /* Bottom margin */
+}
+
+.tool-args {
+    font-family: monospace;
+    /* Monospace font for arguments */
+    opacity: 0.8;
+    /* Slight transparency */
+    white-space: nowrap;
+    /* Prevent wrapping */
+    overflow: hidden;
+    /* Hide overflow */
+    text-overflow: ellipsis;
+    /* Show ellipsis for overflow */
+    max-width: 400px;
+    /* Max width constraint */
+}
+
+.tool-status {
+    font-size: 0.75rem;
+    /* Small font size */
+    padding: 0.15rem 0.5rem;
+    /* Padding */
+    border-radius: 1rem;
+    /* Pill shape */
+    background-color: rgba(34, 197, 94, 0.1);
+    /* Light green background */
+    color: #22c55e;
+    /* Green text */
+}
+
+.tool-status.running {
+    background-color: rgba(234, 179, 8, 0.1);
+    /* Light yellow background */
+    color: #eab308;
+    /* Yellow text */
+}
+
+/* Input Area Styles */
+.input-area {
+    padding: 1.5rem;
+    /* Padding */
+    background: rgba(15, 23, 42, 0.9);
+    /* Semi-transparent background */
+    backdrop-filter: blur(10px);
+    /* Blur effect */
+    border-top: 1px solid var(--border-color);
+    /* Top border */
+}
+
+#chat-form {
+    display: flex;
+    /* Flexbox layout */
+    gap: 0.75rem;
+    /* Space between input and button */
+    max-width: 900px;
+    /* Max width */
+    margin: 0 auto;
+    /* Center horizontally */
+}
+
+#user-input {
+    flex: 1;
+    /* Take up remaining space */
+    background-color: var(--chat-bg);
+    /* Background color */
+    border: 1px solid var(--border-color);
+    /* Border */
+    padding: 0.75rem 1rem;
+    /* Padding */
+    border-radius: 0.75rem;
+    /* Rounded corners */
+    color: var(--text-color);
+    /* Text color */
+    font-size: 1rem;
+    /* Font size */
+    outline: none;
+    /* Remove default outline */
+    transition: border-color 0.2s;
+    /* Smooth transition for border color */
+}
+
+#user-input:focus {
+    border-color: var(--primary-color);
+    /* Change border color on focus */
+}
+
+#send-btn {
+    background-color: var(--primary-color);
+    /* Background color */
+    color: white;
+    /* Text color */
+    border: none;
+    /* Remove border */
+    padding: 0.75rem;
+    /* Padding */
+    border-radius: 0.75rem;
+    /* Rounded corners */
+    cursor: pointer;
+    /* Pointer cursor */
+    display: flex;
+    /* Flexbox layout */
+    align-items: center;
+    /* Center icon */
+    justify-content: center;
+    /* Center icon */
+    transition: background-color 0.2s;
+    /* Smooth transition */
+}
+
+#send-btn:hover {
+    background-color: var(--primary-hover);
+    /* Darker background on hover */
+}
+
+#send-btn:disabled {
+    opacity: 0.5;
+    /* Reduce opacity */
+    cursor: not-allowed;
+    /* Not-allowed cursor */
+}
+
+/* Keyframe Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    /* Start state */
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    /* End state */
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    /* Start state */
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    /* End state */
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+    width: 6px;
+    /* Scrollbar width */
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+    /* Transparent track */
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    /* Thumb color */
+    border-radius: 3px;
+    /* Rounded thumb */
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+    /* Darker thumb on hover */
+}

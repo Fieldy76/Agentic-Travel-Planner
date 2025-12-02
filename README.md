@@ -13,7 +13,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     - 🚗 **Car Rental**: Reserve vehicles for your trip.
     - ☀️ **Weather Forecast**: Check conditions before you travel.
     - 💳 **Payments**: Secure payment processing simulation.
-- **Interactive CLI**: A simple yet powerful command-line interface to interact with the agent.
+- **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
 
 ### Production-Ready Features
 - **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
@@ -63,7 +63,15 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 
 ## 🏃 Usage
 
-Start the agent:
+### Web Interface (Recommended)
+Start the Flask web server:
+```bash
+python server.py
+```
+Open your browser and navigate to `http://localhost:5000`.
+
+### Command Line Interface
+Start the CLI agent:
 ```bash
 python travel_agent/main.py
 ```
@@ -95,20 +103,25 @@ python -m unittest discover tests -v
 ## 📂 Project Structure
 
 ```
-travel_agent/
-├── main.py                 # Application entry point
-├── config.py               # Configuration management
-├── agent/
-│   ├── llm.py              # LLM Provider wrappers
-│   └── orchestrator.py     # Core agent logic (The "Brain")
-├── mcp/
-│   ├── protocol.py         # MCP JSON-RPC definitions
-│   └── server.py           # Custom MCP Server implementation
-└── tools/                  # Tool implementations
-    ├── flights.py
-    ├── cars.py
-    ├── weather.py
-    └── payment.py
+├── server.py               # Flask Web Server
+├── static/                 # Frontend Assets
+│   ├── index.html
+│   ├── css/
+│   └── js/
+├── travel_agent/
+│   ├── main.py             # CLI Entry point
+│   ├── config.py           # Configuration management
+│   ├── agent/
+│   │   ├── llm.py          # LLM Provider wrappers
+│   │   └── orchestrator.py # Core agent logic (The "Brain")
+│   ├── mcp/
+│   │   ├── protocol.py     # MCP JSON-RPC definitions
+│   │   └── server.py       # Custom MCP Server implementation
+│   └── tools/              # Tool implementations
+│       ├── flights.py
+│       ├── cars.py
+│       ├── weather.py
+│       └── payment.py
 ```
 
 ## 🐳 Deployment
@@ -119,7 +132,7 @@ Build and run with Docker:
 docker build -t travel-agent .
 
 # Run the container
-docker run --env-file .env travel-agent
+docker run -p 5000:5000 --env-file .env travel-agent
 ```
 
 The Docker image uses a multi-stage build and runs as a non-root user for security.
@@ -128,6 +141,7 @@ The Docker image uses a multi-stage build and runs as a non-root user for securi
 
 For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every line of code in this directory is commented to explain its purpose and functionality.
 
+- [Annotated Web Server](annotated/server.py)
 - [Annotated Main Entry Point](annotated/travel_agent/main.py)
 - [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py)
 - [Annotated MCP Server](annotated/travel_agent/mcp/server.py)

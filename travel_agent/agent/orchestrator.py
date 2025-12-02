@@ -27,8 +27,8 @@ class AgentOrchestrator:
         Always check the weather before finalizing a plan.
         """
 
-    def run(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop."""
+    def run_generator(self, user_input: str, request_id: str = "default"):
+        """Run one turn of the agent loop, yielding events."""
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
         # Add user message to memory
@@ -54,6 +54,7 @@ class AgentOrchestrator:
                 response = self.llm.call_tool(messages, tools)
             except Exception as e:
                 logger.error(f"LLM call failed: {e}", extra={"request_id": request_id})
+                yield {"type": "error", "content": str(e)}
                 break
             
             content = response.get("content")
@@ -62,7 +63,7 @@ class AgentOrchestrator:
             if content:
                 logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
                 self.memory.add_message({"role": "assistant", "content": content})
-                print(f"Agent: {content}")
+                yield {"type": "message", "content": content}
                 
             if not tool_calls:
                 # No more tools to call, we are done with this turn
@@ -76,7 +77,7 @@ class AgentOrchestrator:
                 tool_id = tool_call["id"]
                 
                 logger.info(f"Executing tool: {tool_name}", extra={"request_id": request_id, "tool_args": tool_args})
-                print(f"Calling Tool: {tool_name} with {tool_args}")
+                yield {"type": "tool_call", "name": tool_name, "arguments": tool_args}
                 
                 # Retry logic
                 max_retries = 3
@@ -98,7 +99,7 @@ class AgentOrchestrator:
                             time.sleep(1 * (attempt + 1)) # Exponential backoff
                 
                 logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
-                print(f"Tool Result: {result_text}")
+                yield {"type": "tool_result", "name": tool_name, "content": result_text, "is_error": is_error}
                 
                 # Append standard tool result message
                 self.memory.add_message({
@@ -107,3 +108,15 @@ class AgentOrchestrator:
                     "name": tool_name,
                     "content": result_text
                 })
+
+    def run(self, user_input: str, request_id: str = "default"):
+        """Run one turn of the agent loop (synchronous wrapper for CLI)."""
+        for event in self.run_generator(user_input, request_id):
+            if event["type"] == "message":
+                print(f"Agent: {event['content']}")
+            elif event["type"] == "tool_call":
+                print(f"Calling Tool: {event['name']} with {event['arguments']}")
+            elif event["type"] == "tool_result":
+                print(f"Tool Result: {event['content']}")
+            elif event["type"] == "error":
+                print(f"Error: {event['content']}")

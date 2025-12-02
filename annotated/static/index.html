@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<!-- Define the document type as HTML5 -->
+<html lang="en">
+<!-- Start of the HTML document with English language -->
+
+<head>
+    <meta charset="UTF-8">
+    <!-- Set character encoding to UTF-8 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Ensure proper rendering and touch zooming on mobile devices -->
+    <title>Agentic Travel Planner</title>
+    <!-- Set the title of the page -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <!-- Preconnect to Google Fonts server for performance -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Preconnect to Google Fonts static content server -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Import the 'Inter' font family with weights 400, 500, and 600 -->
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- Link to the external CSS stylesheet -->
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Main container for the application layout -->
+        <header class="app-header">
+            <!-- Header section containing title and status -->
+            <h1>Agentic Travel Planner</h1>
+            <!-- Main heading -->
+            <div class="status-indicator" id="status-indicator">
+                <!-- Container for the status indicator (dot and text) -->
+                <span class="status-dot"></span>
+                <!-- The visual dot indicating status (green/yellow) -->
+                <span class="status-text">Ready</span>
+                <!-- The text description of the status -->
+            </div>
+        </header>
+
+        <main class="chat-container" id="chat-container">
+            <!-- Main content area where chat messages will appear -->
+            <div class="welcome-message">
+                <!-- Initial welcome message displayed before any chat -->
+                <h2>Where do you want to go?</h2>
+                <p>I can help you plan your trip, book flights, rent cars, and check the weather.</p>
+            </div>
+            <!-- Messages will be dynamically inserted here by JavaScript -->
+        </main>
+
+        <footer class="input-area">
+            <!-- Footer section containing the input form -->
+            <form id="chat-form">
+                <!-- The form element for submitting messages -->
+                <input type="text" id="user-input" placeholder="Type your travel plans..." autocomplete="off">
+                <!-- Text input field for user messages -->
+                <button type="submit" id="send-btn">
+                    <!-- Submit button with an SVG icon -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </form>
+        </footer>
+    </div>
+    <script src="/js/app.js"></script>
+    <!-- Link to the external JavaScript file -->
+</body>
+
+</html>
