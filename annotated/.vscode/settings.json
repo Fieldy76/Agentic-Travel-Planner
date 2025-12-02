@@ -1,0 +1,13 @@
+{
+    // Configure which files and folders should be hidden from the VS Code file explorer
+    "files.exclude": {
+        // Hide all __pycache__ directories recursively throughout the workspace
+        // These directories contain Python bytecode (.pyc) files that are auto-generated
+        // and don't need to be viewed or edited directly
+        "**/__pycache__": true,
+        // Hide all .pyc files (Python bytecode) recursively throughout the workspace
+        // These are compiled Python files that are automatically generated
+        // Hiding them reduces clutter in the file explorer
+        "**/*.pyc": true
+    }
+}

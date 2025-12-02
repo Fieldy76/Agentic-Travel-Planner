@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 
 
 from travel_agent.config import Config  # Import the Config class from the travel_agent.config module
 from travel_agent.agent.llm import get_llm_provider  # Import the get_llm_provider function from the travel_agent.agent.llm module
-from travel_agent.mcp.server import MCPServer  # Import the MCPServer class from the travel_agent.mcp.server module
+from travel_agent.mcp.mcp_server import MCPServer  # Import the MCPServer class from the travel_agent.mcp.mcp_server module
 from travel_agent.agent.orchestrator import AgentOrchestrator  # Import the AgentOrchestrator class from the travel_agent.agent.orchestrator module
 from travel_agent.tools import (  # Import specific tool functions from the travel_agent.tools module
     search_flights,  # Import the search_flights function

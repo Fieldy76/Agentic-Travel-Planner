@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from .llm import LLMProvider
-from ..mcp.server import MCPServer
+from ..mcp.mcp_server import MCPServer
 from .memory import AgentMemory, InMemoryMemory
 from ..config import setup_logging
 

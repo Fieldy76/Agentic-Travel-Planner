@@ -1,0 +1,41 @@
+# Python
+__pycache__/  # Cached bytecode files created by Python interpreter
+*.py[cod]  # Python bytecode files with various optimization levels
+*$py.class  # Java-style bytecode files
+*.so  # Shared object files (compiled extensions)
+.Python  # Python installation directory
+build/  # Build output directory
+develop-eggs/  # Development egg files
+dist/  # Distribution/packaging directory
+downloads/  # Downloaded files
+eggs/  # Egg package files
+.eggs/  # Egg info directory
+lib/  # Library directory
+lib64/  # 64-bit library directory
+parts/  # Parts directory
+sdist/  # Source distribution directory
+var/  # Variable data directory
+wheels/  # Wheel distribution directory
+share/python-wheels/  # Shared wheel files
+*.egg-info/  # Egg metadata directory
+.installed.cfg  # Buildout installed configuration
+*.egg  # Egg package files
+MANIFEST  # Manifest file
+
+# Virtual Environments
+venv/  # Virtual environment directory (standard name)
+env/  # Alternative virtual environment directory name
+ENV/  # Alternative virtual environment directory name
+.env  # Environment variables file (contains secrets)
+.venv  # Alternative virtual environment directory name
+env.bak/  # Backup of virtual environment
+venv.bak/  # Backup of virtual environment
+
+# Environment Variables
+.env  # Environment variables file (duplicate, but commonly listed separately)
+
+# IDEs
+.idea/  # JetBrains IDE configuration directory
+
+# Logs
+*.log  # Log files

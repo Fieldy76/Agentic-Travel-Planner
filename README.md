@@ -43,6 +43,9 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     pip install -r requirements.txt
     ```
 
+> [!TIP]
+> If using VS Code, the included `.vscode/settings.json` will automatically hide `__pycache__` folders for a cleaner workspace.
+
 ## ⚙️ Configuration
 
 1.  Copy the example environment file:
@@ -66,7 +69,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 ### Web Interface (Recommended)
 Start the Flask web server:
 ```bash
-python server.py
+python web_server.py
 ```
 Open your browser and navigate to `http://localhost:5000`.
 
@@ -103,7 +106,7 @@ python -m unittest discover tests -v
 ## 📂 Project Structure
 
 ```
-├── server.py               # Flask Web Server
+├── web_server.py           # Flask Web Server (Entry Point)
 ├── static/                 # Frontend Assets
 │   ├── index.html
 │   ├── css/
@@ -113,10 +116,12 @@ python -m unittest discover tests -v
 │   ├── config.py           # Configuration management
 │   ├── agent/
 │   │   ├── llm.py          # LLM Provider wrappers
-│   │   └── orchestrator.py # Core agent logic (The "Brain")
+│   │   ├── orchestrator.py # Core agent logic
+│   │   ├── memory.py       # Conversation memory
+│   │   └── cache.py        # Performance caching
 │   ├── mcp/
 │   │   ├── protocol.py     # MCP JSON-RPC definitions
-│   │   └── server.py       # Custom MCP Server implementation
+│   │   └── mcp_server.py   # MCP Server implementation
 │   └── tools/              # Tool implementations
 │       ├── flights.py
 │       ├── cars.py
@@ -141,10 +146,10 @@ The Docker image uses a multi-stage build and runs as a non-root user for securi
 
 For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every line of code in this directory is commented to explain its purpose and functionality.
 
-- [Annotated Web Server](annotated/server.py)
+- [Annotated Web Server](annotated/web_server.py)
 - [Annotated Main Entry Point](annotated/travel_agent/main.py)
 - [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py)
-- [Annotated MCP Server](annotated/travel_agent/mcp/server.py)
+- [Annotated MCP Server](annotated/travel_agent/mcp/mcp_server.py)
 
 ## 🤝 Contributing
 

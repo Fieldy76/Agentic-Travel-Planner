@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from travel_agent.config import Config
 from travel_agent.agent.llm import get_llm_provider
-from travel_agent.mcp.server import MCPServer
+from travel_agent.mcp.mcp_server import MCPServer
 from travel_agent.agent.orchestrator import AgentOrchestrator
 from travel_agent.tools import (
     search_flights, 

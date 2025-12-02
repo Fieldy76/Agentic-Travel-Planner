@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Append the curren
 
 from travel_agent.config import Config  # Import the Config class for application configuration
 from travel_agent.agent.llm import get_llm_provider  # Import helper to get the LLM provider instance
-from travel_agent.mcp.server import MCPServer  # Import the MCPServer class for tool management
+from travel_agent.mcp.mcp_server import MCPServer  # Import the MCPServer class for tool management
 from travel_agent.agent.orchestrator import AgentOrchestrator  # Import the AgentOrchestrator class for managing the agent loop
 from travel_agent.tools import (  # Import the available tools for the agent
     search_flights, 

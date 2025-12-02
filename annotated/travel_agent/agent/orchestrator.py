@@ -3,7 +3,7 @@ import json  # Import JSON module
 import logging  # Import logging module
 import time  # Import time module for sleep
 from .llm import LLMProvider  # Import abstract base class for LLM providers
-from ..mcp.server import MCPServer  # Import MCP Server for tool management
+from ..mcp.mcp_server import MCPServer  # Import MCP Server for tool management
 from .memory import AgentMemory, InMemoryMemory  # Import memory management classes
 from ..config import setup_logging  # Import logging configuration helper
 
