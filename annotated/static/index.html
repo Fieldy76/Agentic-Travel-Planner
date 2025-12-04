@@ -2,64 +2,46 @@
 <html lang="en">
 
 <head>
-    <!-- Character encoding for proper text rendering -->
     <meta charset="UTF-8">
-    <!-- Responsive viewport settings for mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Page title shown in browser tab -->
     <title>Agentic Travel Planner</title>
-
-    <!-- Preconnect to Google Fonts for faster loading -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Load Inter font family for modern typography -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
-    <!-- Main stylesheet for application styling -->
     <link rel="stylesheet" href="/css/style.css">
 </head>
 
 <body>
-    <!-- Main application container - wraps all content -->
     <div class="app-container">
-        <!-- Header section with title and status indicator -->
         <header class="app-header">
-            <!-- Left side of header: history toggle button and title -->
             <div class="header-left">
-                <!-- Button to toggle search history sidebar visibility -->
                 <button id="history-toggle" class="history-toggle" title="Toggle Search History">
-                    <!-- Clock icon SVG to represent history -->
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg class="history-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
                         <polyline points="12 6 12 12 16 14"></polyline>
                     </svg>
-                    History
+                    <span>History</span>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
                 </button>
-                <!-- Main application title -->
                 <h1>Agentic Travel Planner</h1>
             </div>
-
-            <!-- Right side of header: status indicator -->
             <div class="status-indicator" id="status-indicator">
-                <!-- Status dot - changes color based on agent state (green=ready, yellow=busy) -->
                 <span class="status-dot"></span>
-                <!-- Status text - displays "Ready" or "Thinking..." -->
                 <span class="status-text">Ready</span>
             </div>
         </header>
 
-        <!-- Content wrapper: contains sidebar and main chat area -->
         <div class="content-wrapper">
-            <!-- Search history sidebar - collapsible panel on the left -->
-            <aside class="history-sidebar" id="history-sidebar">
-                <!-- Header section of history sidebar -->
+            <aside class="history-sidebar collapsed" id="history-sidebar">
                 <div class="history-header">
-                    <!-- Title for history section -->
                     <h3>Search History</h3>
-                    <!-- Button to clear all search history (trash icon) -->
                     <button id="clear-history" class="clear-history-btn" title="Clear all history">
-                        <!-- Trash can icon SVG -->
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="3 6 5 6 21 6"></polyline>
@@ -68,33 +50,24 @@
                         </svg>
                     </button>
                 </div>
-                <!-- Scrollable list container for history items -->
                 <div class="history-list" id="history-list">
-                    <!-- Empty state message - shown when no history exists -->
                     <div class="history-empty">No search history yet</div>
                 </div>
             </aside>
 
-            <!-- Main chat container - displays conversation messages -->
             <main class="chat-container" id="chat-container">
-                <!-- Welcome message shown on initial load -->
                 <div class="welcome-message">
                     <h2>Where do you want to go?</h2>
                     <p>I can help you plan your trip, book flights, rent cars, and check the weather.</p>
                 </div>
-                <!-- Messages will be dynamically inserted here by JavaScript -->
+                <!-- Messages will be inserted here -->
             </main>
         </div>
 
-        <!-- Footer section with input form -->
         <footer class="input-area">
-            <!-- Chat form - handles user message submission -->
             <form id="chat-form">
-                <!-- Text input for user messages -->
                 <input type="text" id="user-input" placeholder="Type your travel plans..." autocomplete="off">
-                <!-- Submit button with send icon -->
                 <button type="submit" id="send-btn">
-                    <!-- Send/paper airplane icon SVG -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -104,8 +77,6 @@
             </form>
         </footer>
     </div>
-
-    <!-- Main application JavaScript - handles all interactivity -->
     <script src="/js/app.js"></script>
 </body>
 

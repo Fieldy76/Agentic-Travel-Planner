@@ -194,7 +194,7 @@ class AnthropicProvider(LLMProvider):
         return {"content": content_text, "tool_calls": tool_calls if tool_calls else None}
 
 class GoogleProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str = "gemini-1.5-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
         if not genai:
             raise ImportError("Google Generative AI SDK not installed.")
         genai.configure(api_key=api_key)
@@ -208,60 +208,124 @@ class GoogleProvider(LLMProvider):
         return response.text
 
     def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # Basic Google Tool Support
-        # Note: This is a best-effort implementation. 
-        # Google's SDK manages history via ChatSession usually, but here we have stateless messages.
-        
+        # Questa implementazione gestisce la conversione di messaggi e strumenti per l'SDK di Google.
+
         google_tools = []
         for tool in tools:
-            # Convert JSON Schema to Google FunctionDeclaration
-            # This is complex to map perfectly, doing a simplified mapping
-            google_tools.append({
-                "function_declarations": [{
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("inputSchema", {})
-                }]
-            })
+            # Convert JSON Schema to Google FunctionDeclaration. 
+            tool_parameters = tool.get('inputSchema', {})
             
-        # Convert messages to Google Content format
+            # Map parameters to genai.protos.Schema format
+            parameters_schema = genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    k: genai.protos.Schema(type=genai.protos.Type[v['type'].upper()])
+                    for k, v in tool_parameters.get('properties', {}).items()
+                },
+                required=tool_parameters.get('required', [])
+            )
+
+            google_tools.append(genai.protos.Tool(
+                function_declarations=[genai.protos.FunctionDeclaration(
+                    name=tool["name"],
+                    description=tool.get("description", ""),
+                    parameters=parameters_schema
+                )]
+            ))
+            
+        # 1. Convert messages to Google Content format
         history = []
         for msg in messages:
+            # Google Chat roles are 'user' and 'model'
             role = "user" if msg["role"] in ["user", "tool"] else "model"
             parts = []
             
             if msg["role"] == "tool":
                 # Google expects FunctionResponse
+                tool_name = msg.get("name")
+                if not tool_name:
+                    tool_name = msg.get("tool_name", "tool_result") 
+
                 parts.append(genai.protos.Part(
                     function_response=genai.protos.FunctionResponse(
-                        name=msg["name"],
-                        response={"result": msg["content"]}
+                        name=tool_name, 
+                        response={"result": msg["content"]} 
                     )
                 ))
             elif msg["role"] == "assistant" and msg.get("tool_calls"):
                  # Google expects FunctionCall
                  for tc in msg["tool_calls"]:
+                     
+                     # RISOLUZIONE DEL PROBLEMA: CONVERSIONE OBBLIGATORIA A Protobuf Struct
+                     proto_args = struct_pb2.Struct()
+                     proto_args.update(tc["arguments"]) 
+                     
                      parts.append(genai.protos.Part(
                          function_call=genai.protos.FunctionCall(
                              name=tc["name"],
-                             args=tc["arguments"]
+                             args=proto_args # Ora è l'oggetto Protobuf
                          )
                      ))
             else:
-                parts.append(genai.protos.Part(text=msg.get("content", "")))
-                
-            history.append(genai.protos.Content(role=role, parts=parts))
+                # Regular message with text content
+                content_text = msg.get("content", "")
+                if content_text:  # Only add if content is not empty
+                    parts.append(genai.protos.Part(text=content_text))
+            
+            # Only add to history if we have parts
+            if parts:
+                history.append(genai.protos.Content(role=role, parts=parts))
 
-        # Generate
-        # We need to use the chat interface to maintain history correctly with tools
-        chat = self.model.start_chat(history=history[:-1] if history else [])
-        last_msg = history[-1] if history else None
+        # 2. Generate the content
+        contents = history[-1] if history else None
+        chat_history = history[:-1] if len(history) > 1 else []
         
-        # This is tricky because start_chat expects history, and we send the last message
-        # But if the last message was a tool response, we need to send it carefully
+        if contents is None or not contents.parts:
+            return {"content": "Error: No valid message content to send to Google API.", "tool_calls": None}
+
+        # Use the chat interface to maintain history and send the current message/tool result
+        chat = self.model.start_chat(history=chat_history)
         
-        # Fallback: Just warn user
-        return {"content": "Google Tool Calling requires complex protobuf mapping. Please use OpenAI or Anthropic for full tool support.", "tool_calls": None}
+        # The tools config must be passed with the send_message call
+        response = chat.send_message(
+            contents,
+            tools=google_tools
+        )
+        
+        # 3. Decode the Google response
+        tool_calls = []
+        content_text = ""
+        
+        # Check for function calls and text in the response parts
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and candidate.content.parts:
+                for part in candidate.content.parts:
+                    # Safely extract text if present
+                    try:
+                        if hasattr(part, 'text') and part.text:
+                            content_text += part.text
+                    except (ValueError, AttributeError):
+                        # Part doesn't have text, skip
+                        pass
+                    
+                    # Check for function calls
+                    if hasattr(part, 'function_call') and part.function_call:
+                        # Convert Protobuf Struct arguments back to Python dict
+                        tool_args = dict(part.function_call.args) 
+                        
+                        tool_calls.append({
+                            "id": f"gemini_tc_{len(tool_calls) + 1}", 
+                            "name": part.function_call.name,
+                            "arguments": tool_args
+                        })
+        
+        # Ensure we have at least some content
+        if not content_text and not tool_calls:
+            content_text = "I apologize, but I couldn't generate a proper response. Please try rephrasing your question."
+
+
+        return {"content": content_text, "tool_calls": tool_calls if tool_calls else None}
 
 def get_llm_provider(provider_name: str, api_key: str) -> LLMProvider:
     if provider_name.lower() == "openai":

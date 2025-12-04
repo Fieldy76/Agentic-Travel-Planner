@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isProcessing = false;
     let searchHistory = loadSearchHistory();
+    let currentConversationId = null;
+    let conversationMessages = [];
 
     // Initialize history display
     renderHistory();
@@ -20,6 +22,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toggle history sidebar
     historyToggle.addEventListener('click', () => {
         historySidebar.classList.toggle('collapsed');
+        const chevron = historyToggle.querySelector('.chevron-icon');
+        if (historySidebar.classList.contains('collapsed')) {
+            chevron.style.transform = 'rotate(180deg)';
+        } else {
+            chevron.style.transform = 'rotate(0deg)';
+        }
     });
 
     // Clear history
@@ -28,6 +36,9 @@ document.addEventListener('DOMContentLoaded', () => {
             searchHistory = [];
             saveSearchHistory();
             renderHistory();
+
+            // Also clear all chat messages and start new conversation
+            startNewConversation();
         }
     });
 
@@ -36,11 +47,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = userInput.value.trim();
         if (!message || isProcessing) return;
 
-        // Add to search history
-        addToHistory(message);
+        // If starting a new conversation, create a history entry
+        if (currentConversationId === null) {
+            currentConversationId = Date.now().toString();
+            // We'll add it to history after we get a response or immediately?
+            // Let's add immediately to track it.
+            addConversationToHistory(message);
+        }
 
         // Add User Message
         appendMessage('user', message);
+        saveCurrentConversation(); // Save state
+
         userInput.value = '';
         setProcessing(true);
 
@@ -83,18 +101,23 @@ document.addEventListener('DOMContentLoaded', () => {
             appendMessage('assistant', 'Sorry, something went wrong. Please try again.');
         } finally {
             setProcessing(false);
+            saveCurrentConversation(); // Save final state
         }
     });
 
     function handleEvent(event) {
         switch (event.type) {
             case 'message':
-                appendMessage('assistant', event.content);
+                // Only show messages that don't contain raw tool output
+                if (!event.content.includes('```tool_outputs')) {
+                    appendMessage('assistant', event.content);
+                }
                 break;
             case 'tool_call':
                 appendToolCall(event.name, event.arguments);
                 break;
             case 'tool_result':
+                // Just update the status, don't display the raw result
                 updateToolResult(event.name, event.content, event.is_error);
                 break;
             case 'error':
@@ -109,11 +132,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        contentDiv.textContent = content;
+
+        // Render Markdown links: [text](url) -> <a href="url" target="_blank">text</a>
+        // Also handle newlines
+        let formattedContent = escapeHtml(content)
+            .replace(/\n/g, '<br>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+        contentDiv.innerHTML = formattedContent;
 
         messageDiv.appendChild(contentDiv);
         chatContainer.appendChild(messageDiv);
         scrollToBottom();
+
+        // Update internal state
+        conversationMessages.push({ role, content });
     }
 
     function appendToolCall(name, args) {
@@ -121,22 +154,81 @@ document.addEventListener('DOMContentLoaded', () => {
         toolDiv.className = 'tool-call';
         toolDiv.id = `tool-${Date.now()}`; // Simple ID generation
 
+        // Get friendly display text
+        const displayInfo = getToolDisplayInfo(name, args);
+
         toolDiv.innerHTML = `
             <div class="tool-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                ${displayInfo.icon}
             </div>
             <div class="tool-details">
-                <div class="tool-name">${formatToolName(name)}</div>
-                <div class="tool-args">${JSON.stringify(args)}</div>
+                <div class="tool-name">${displayInfo.title}</div>
+                <div class="tool-args">${displayInfo.description}</div>
             </div>
-            <div class="tool-status running">Running</div>
+            <div class="tool-status running">${displayInfo.runningText}</div>
         `;
 
         chatContainer.appendChild(toolDiv);
         scrollToBottom();
 
-        // Store reference to update later (simplification: assuming sequential tool calls for now)
+        // Store reference to update later
         window.lastToolDiv = toolDiv;
+
+        // Add to history state (simplified)
+        conversationMessages.push({
+            role: 'tool_call_ui',
+            name,
+            args,
+            displayInfo
+        });
+    }
+
+    function getToolDisplayInfo(name, args) {
+        // Return friendly display text based on tool type
+        switch (name) {
+            case 'search_flights':
+                return {
+                    title: 'Flight Search',
+                    description: `${args.origin || '?'} → ${args.destination || '?'} on ${args.date || '?'}`,
+                    runningText: 'Searching...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path></svg>'
+                };
+            case 'get_forecast':
+                return {
+                    title: 'Weather Forecast',
+                    description: `${args.location || '?'} on ${args.date || '?'}`,
+                    runningText: 'Checking weather...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path><circle cx="12" cy="12" r="5"></circle></svg>'
+                };
+            case 'rent_car':
+                return {
+                    title: 'Car Rental',
+                    description: `${args.location || '?'} from ${args.start_date || '?'} to ${args.end_date || '?'}`,
+                    runningText: 'Searching cars...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg>'
+                };
+            case 'book_flight':
+                return {
+                    title: 'Flight Booking',
+                    description: `Booking for ${args.passenger_name || '?'}`,
+                    runningText: 'Booking...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg>'
+                };
+            case 'process_payment':
+                return {
+                    title: 'Payment Processing',
+                    description: `${args.amount || '?'} ${args.currency || ''}`,
+                    runningText: 'Processing...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>'
+                };
+            default:
+                return {
+                    title: formatToolName(name),
+                    description: JSON.stringify(args),
+                    runningText: 'Running...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+                };
+        }
     }
 
     function updateToolResult(name, content, isError) {
@@ -173,10 +265,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (processing) {
             statusDot.classList.add('busy');
             statusText.textContent = 'Thinking...';
+
+            // Add "Thinking" bubble
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'message assistant thinking-bubble';
+            thinkingDiv.id = 'thinking-indicator';
+            thinkingDiv.innerHTML = `
+                <div class="message-content">
+                    <span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+                </div>
+            `;
+            chatContainer.appendChild(thinkingDiv);
+            scrollToBottom();
         } else {
             statusDot.classList.remove('busy');
             statusText.textContent = 'Ready';
             userInput.focus();
+
+            // Remove "Thinking" bubble
+            const thinkingDiv = document.getElementById('thinking-indicator');
+            if (thinkingDiv) {
+                thinkingDiv.remove();
+            }
         }
     }
 
@@ -199,22 +309,109 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function addToHistory(message) {
-        const historyItem = {
-            text: message,
-            timestamp: new Date().toISOString()
+    function saveCurrentConversation() {
+        if (!currentConversationId) return;
+
+        const index = searchHistory.findIndex(c => c.id === currentConversationId);
+        if (index !== -1) {
+            searchHistory[index].messages = conversationMessages;
+            saveSearchHistory();
+        }
+    }
+
+    function addConversationToHistory(firstMessage) {
+        const conversationItem = {
+            id: currentConversationId,
+            title: firstMessage.length > 50 ? firstMessage.substring(0, 50) + '...' : firstMessage,
+            timestamp: new Date().toISOString(),
+            messages: [] // Will be populated as we go
         };
 
         // Add to beginning (most recent first)
-        searchHistory.unshift(historyItem);
+        searchHistory.unshift(conversationItem);
 
-        // Limit history to 50 items
+        // Limit history to 50 conversations
         if (searchHistory.length > 50) {
             searchHistory = searchHistory.slice(0, 50);
         }
 
         saveSearchHistory();
         renderHistory();
+    }
+
+    function startNewConversation() {
+        // Clear current conversation
+        chatContainer.innerHTML = '';
+        currentConversationId = null;
+        conversationMessages = [];
+        userInput.value = '';
+        userInput.focus();
+
+        // Remove active class from history
+        document.querySelectorAll('.history-item').forEach(item => item.classList.remove('active'));
+    }
+
+    function loadConversation(id) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (!conversation) return;
+
+        currentConversationId = id;
+        conversationMessages = conversation.messages || [];
+
+        // Clear and rebuild chat
+        chatContainer.innerHTML = '';
+
+        // Replay messages
+        conversationMessages.forEach(msg => {
+            if (msg.role === 'tool_call_ui') {
+                // Reconstruct tool call UI
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool-call';
+                // We don't need ID for history items really
+
+                const displayInfo = msg.displayInfo || getToolDisplayInfo(msg.name, msg.args);
+
+                toolDiv.innerHTML = `
+                    <div class="tool-icon">
+                        ${displayInfo.icon}
+                    </div>
+                    <div class="tool-details">
+                        <div class="tool-name">${displayInfo.title}</div>
+                        <div class="tool-args">${displayInfo.description}</div>
+                    </div>
+                    <div class="tool-status completed" style="background-color: rgba(34, 197, 94, 0.1); color: #22c55e;">Completed</div>
+                `;
+                chatContainer.appendChild(toolDiv);
+            } else {
+                appendMessage(msg.role, msg.content);
+            }
+        });
+
+        // Remove duplicate messages from state (appendMessage adds them again)
+        // Actually appendMessage adds to conversationMessages, so we should reset it before replaying
+        // But wait, appendMessage pushes to conversationMessages. 
+        // So if we loop and call appendMessage, we are doubling the array.
+        // Let's fix this by decoupling UI rendering from state update in appendMessage, 
+        // OR just reset conversationMessages after replaying?
+        // Better: make appendMessage NOT update state, handle state separately.
+        // But for now, let's just reset it to the loaded messages after replaying.
+        conversationMessages = conversation.messages || [];
+
+        scrollToBottom();
+        renderHistory();
+    }
+
+    function deleteConversation(id, event) {
+        event.stopPropagation(); // Prevent clicking the item
+        if (confirm('Delete this conversation?')) {
+            searchHistory = searchHistory.filter(c => c.id !== id);
+            saveSearchHistory();
+            renderHistory();
+
+            if (currentConversationId === id) {
+                startNewConversation();
+            }
+        }
     }
 
     function renderHistory() {
@@ -224,20 +421,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         historyList.innerHTML = '';
-        searchHistory.forEach((item, index) => {
+        searchHistory.forEach((conversation) => {
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
+
+            // Add active class if this is the current conversation
+            if (conversation.id === currentConversationId) {
+                historyItem.classList.add('active');
+            }
+
             historyItem.innerHTML = `
-                <div class="history-item-text">${escapeHtml(item.text)}</div>
-                <div class="history-item-time">${formatTimestamp(item.timestamp)}</div>
+                <div class="history-item-content">
+                    <div class="history-item-text">${escapeHtml(conversation.title)}</div>
+                    <div class="history-item-time">${formatTimestamp(conversation.timestamp)}</div>
+                </div>
+                <button class="delete-history-btn" title="Delete">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
             `;
 
             historyItem.addEventListener('click', () => {
-                userInput.value = item.text;
-                userInput.focus();
-                // Optionally auto-submit
-                // chatForm.dispatchEvent(new Event('submit'));
+                loadConversation(conversation.id);
             });
+
+            // Add delete handler
+            const deleteBtn = historyItem.querySelector('.delete-history-btn');
+            deleteBtn.addEventListener('click', (e) => deleteConversation(conversation.id, e));
 
             historyList.appendChild(historyItem);
         });
@@ -260,8 +469,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 });

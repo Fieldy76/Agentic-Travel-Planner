@@ -10,11 +10,16 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 - **Multi-LLM Support**: Seamlessly switch between OpenAI, Anthropic, and Google Gemini models.
 - **Integrated Tools**:
     - ✈️ **Flight Search & Booking**: Find and book flights with ease.
+        - Full airline names (e.g., "Delta Air Lines" instead of "DL")
+        - Clickable booking links to airline websites
+        - Localized pricing based on origin airport (USD, EUR, GBP, JPY)
+        - Alternative flight suggestions when no results found
     - 🚗 **Car Rental**: Reserve vehicles for your trip.
-    - ☀️ **Weather Forecast**: Check conditions before you travel.
+    - ☀️ **Weather Forecast**: Automatically fetched with flight searches.
     - 💳 **Payments**: Secure payment processing simulation.
+    - 📅 **Relative Date Handling**: Natural language date support ("tomorrow", "in 2 days", "next week").
 - **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
-- **📜 Search History**: Chronological history of all searches with localStorage persistence, allowing quick access to previous queries.
+- **📜 Search History**: Full conversation history with localStorage persistence, delete individual conversations, and quick access to previous queries.
 
 ### Production-Ready Features
 - **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
@@ -65,6 +70,9 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     FLIGHT_API_KEY=...
     ```
 
+    > [!IMPORTANT]
+    > The application will automatically load these keys from the `.env` file. Ensure this file exists in the root directory before running the application.
+
 ## 🏃 Usage
 
 ### Web Interface (Recommended)
@@ -92,14 +100,27 @@ Agent: Great! Let me check flights and weather for you...
 
 The web interface includes:
 - **💬 Chat Interface**: Modern, responsive chat UI with message history
-- **📜 Search History Sidebar**: 
-  - View all previous searches in chronological order
-  - Toggle visibility with the "History" button
-  - Click any history item to reuse that search
+- **🎨 Modern Premium Design**: 
+  - Purple-blue gradient color scheme
+  - Glassmorphism effects with backdrop blur
+  - Smooth cubic-bezier animations
+  - Glowing effects on interactive elements
+  - Radial gradient background overlays
+  - Enhanced depth with modern shadows
+- **🔗 Clickable Links**: Flight booking links rendered as clickable elements
+- **⏳ Thinking Indicator**: Animated "Thinking..." bubble shows agent activity
+- **📜 Collapsible Search History Sidebar**: 
+  - Starts collapsed for a cleaner initial view
+  - Animated chevron icon rotates on toggle
+  - View and restore full conversation history
+  - Delete individual conversations with trash icon
+  - Click any history item to restore that conversation
   - Smart timestamps (e.g., "5m ago", "2h ago", "3d ago")
   - Clear all history with confirmation
-  - Persistent storage using localStorage (up to 50 searches)
-- **🎨 Beautiful Design**: Dark mode with smooth animations and premium aesthetics
+  - Persistent storage using localStorage (up to 50 conversations)
+- **✈️ Flexible Flight Booking**:
+  - Accept multiple selection formats (flight codes, numbers, or natural language)
+  - Clear confirmation messages with booking reference and details
 - **📊 Real-time Status**: Live updates as the agent processes tools
 
 ## 🧪 Testing

@@ -16,16 +16,68 @@ class AgentOrchestrator:
         self.llm = llm
         self.server = server
         self.memory = memory or InMemoryMemory()
-        self.system_prompt = """You are a helpful travel assistant. 
-        You have access to tools to search flights, book flights, rent cars, check weather, and process payments.
-        
-        When a user asks for a travel plan:
-        1. Search for options (flights, cars, weather).
-        2. Present options to the user.
-        3. If the user confirms, proceed to booking and payment.
-        
-        Always check the weather before finalizing a plan.
-        """
+        self.system_prompt = """You are a travel assistant. Help users plan trips efficiently.
+
+CRITICAL: All tool functions expect dates in YYYY-MM-DD format. You MUST convert any relative dates (like "in 2 days", "next week", "tomorrow") to absolute YYYY-MM-DD format BEFORE calling any tools.
+
+When asked about travel:
+1. DATES:
+   - You will receive the current date in the context below.
+   - ALWAYS convert relative dates to YYYY-MM-DD format before calling tools.
+   - Examples: "tomorrow" → calculate and use YYYY-MM-DD, "in 3 days" → calculate and use YYYY-MM-DD.
+
+2. FLIGHTS:
+   - If the user doesn't specify One-Way or Round-Trip, YOU MUST ASK them before searching.
+   - If no flights are found, the tool may return alternatives. Present them clearly.
+   - Flight results include booking URLs. Ensure these are presented as clickable links in your response (e.g., [Book Delta](url)).
+   
+3. ROUND TRIP WORKFLOW:
+   - When the user requests a ROUND TRIP:
+     a) Ask for the RETURN DATE if not provided
+     b) Search for OUTBOUND flights first and present options
+     c) After user selects outbound flight, IMMEDIATELY search for RETURN flights
+     d) After user selects return flight, ask for passenger details (name and passport)
+     e) Book BOTH flights with the passenger information
+     f) Provide a COMBINED confirmation for both bookings
+   - DO NOT book only the outbound flight and stop - you must complete the entire round trip booking.
+   
+4. BOOKING:
+   - When the user wants to book a flight, they can specify it by:
+     * Flight code (e.g., "DL455", "BA200") 
+     * Flight number
+     * Airline name and flight number
+     * Or simply "flight 1", "the first one", etc. (referring to presented options)
+   - Accept ANY of these formats - don't force users to use numbers.
+   - The flight_id parameter for book_flight is the flight code/ID from the search results.
+   - After calling book_flight, you MUST IMMEDIATELY respond with a confirmation that includes:
+     * "I have successfully booked..." or "Your booking is confirmed"
+     * Booking reference number
+     * Flight details (code, airline, route, date/time)
+     * Passenger name
+     * What to expect next (e.g., "Check your email for confirmation")
+   - NEVER wait for the user to ask "so?" or "did it work?" - respond automatically after the tool returns.
+   - Make your confirmation enthusiastic and reassuring.
+
+5. ACKNOWLEDGMENT BEHAVIOR:
+   - ALWAYS acknowledge when the user provides information to you.
+   - When receiving passenger details (name, passport), respond with:
+     * "Thank you! I have your details: [name] with passport [number]"
+     * Then IMMEDIATELY proceed to book the flight(s) - don't wait for further prompting
+   - Use acknowledgment phrases: "Got it!", "Perfect!", "Thank you for providing that!"
+   - NEVER stay silent after receiving user input - always confirm receipt and state what happens next.
+
+6. WEATHER:
+   - When searching for flights, you MUST ALSO call get_forecast for the destination city and date.
+   - Call both search_flights AND get_forecast in the SAME turn - do not wait for flight results before checking weather.
+   - Include the forecast in your final response.
+
+7. GENERAL:
+   - Present results clearly and concisely.
+   - Only use tools when necessary.
+   - Be helpful and proactive.
+   - ALWAYS confirm actions were completed successfully.
+
+Be brief and helpful."""
 
     def run_generator(self, user_input: str, request_id: str = "default"):
         """Run one turn of the agent loop, yielding events."""
@@ -34,7 +86,7 @@ class AgentOrchestrator:
         # Add user message to memory
         self.memory.add_message({"role": "user", "content": user_input})
         
-        # Main Loop
+        # Main Loop - Increased to 10 to handle multi-step flows like booking
         max_turns = 10
         current_turn = 0
         
@@ -44,11 +96,25 @@ class AgentOrchestrator:
             # 1. Get available tools
             tools = self.server.list_tools()
             
-            # 2. Call LLM
+            # 2. Call LLM with current date/time context
             logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
             
-            # Construct full history with system prompt
-            messages = [{"role": "system", "content": self.system_prompt}] + self.memory.get_messages()
+            # Inject current date/time into system prompt
+            from datetime import datetime
+            now = datetime.now()
+            current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
+            current_date = now.strftime("%Y-%m-%d")
+            
+            enhanced_system_prompt = f"""{self.system_prompt}
+
+IMPORTANT CONTEXT:
+- Current date and time: {current_datetime}
+- Today's date: {current_date}
+- When users ask about "today", "now", or relative dates, use this information.
+"""
+            
+            # Construct full history with enhanced system prompt
+            messages = [{"role": "system", "content": enhanced_system_prompt}] + self.memory.get_messages()
             
             try:
                 response = self.llm.call_tool(messages, tools)
@@ -62,7 +128,11 @@ class AgentOrchestrator:
             
             if content:
                 logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
-                self.memory.add_message({"role": "assistant", "content": content})
+                self.memory.add_message({
+                    "role": "assistant", 
+                    "content": content,
+                    "tool_calls": tool_calls
+                })
                 yield {"type": "message", "content": content}
                 
             if not tool_calls:

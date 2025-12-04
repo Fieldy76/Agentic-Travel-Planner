@@ -15,6 +15,7 @@ class Config:
     
     # Service Keys
     FLIGHT_API_KEY = os.getenv("FLIGHT_API_KEY")
+    FLIGHT_API_SECRET = os.getenv("FLIGHT_API_SECRET")  # Required for Amadeus OAuth
     WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     
     @classmethod

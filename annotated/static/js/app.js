@@ -1,168 +1,480 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Wait for the DOM to be fully loaded before executing the script
-    const chatForm = document.getElementById('chat-form'); // Get the chat form element
-    const userInput = document.getElementById('user-input'); // Get the user input field
-    const chatContainer = document.getElementById('chat-container'); // Get the container for chat messages
-    const sendBtn = document.getElementById('send-btn'); // Get the send button
-    const statusIndicator = document.getElementById('status-indicator'); // Get the status indicator container
-    const statusDot = statusIndicator.querySelector('.status-dot'); // Get the status dot element
-    const statusText = statusIndicator.querySelector('.status-text'); // Get the status text element
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const chatContainer = document.getElementById('chat-container');
+    const sendBtn = document.getElementById('send-btn');
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusDot = statusIndicator.querySelector('.status-dot');
+    const statusText = statusIndicator.querySelector('.status-text');
+    const historyToggle = document.getElementById('history-toggle');
+    const historySidebar = document.getElementById('history-sidebar');
+    const historyList = document.getElementById('history-list');
+    const clearHistoryBtn = document.getElementById('clear-history');
 
-    let isProcessing = false; // Flag to track if a request is currently being processed
+    let isProcessing = false;
+    let searchHistory = loadSearchHistory();
+    let currentConversationId = null;
+    let conversationMessages = [];
+
+    // Initialize history display
+    renderHistory();
+
+    // Toggle history sidebar
+    historyToggle.addEventListener('click', () => {
+        historySidebar.classList.toggle('collapsed');
+        const chevron = historyToggle.querySelector('.chevron-icon');
+        if (historySidebar.classList.contains('collapsed')) {
+            chevron.style.transform = 'rotate(180deg)';
+        } else {
+            chevron.style.transform = 'rotate(0deg)';
+        }
+    });
+
+    // Clear history
+    clearHistoryBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear all search history?')) {
+            searchHistory = [];
+            saveSearchHistory();
+            renderHistory();
+
+            // Also clear all chat messages and start new conversation
+            startNewConversation();
+        }
+    });
 
     chatForm.addEventListener('submit', async (e) => {
-        // Add event listener for form submission
-        e.preventDefault(); // Prevent default form submission (page reload)
-        const message = userInput.value.trim(); // Get and trim the user's message
-        if (!message || isProcessing) return; // Exit if message is empty or already processing
+        e.preventDefault();
+        const message = userInput.value.trim();
+        if (!message || isProcessing) return;
 
-        // Add User Message to UI
+        // If starting a new conversation, create a history entry
+        if (currentConversationId === null) {
+            currentConversationId = Date.now().toString();
+            // We'll add it to history after we get a response or immediately?
+            // Let's add immediately to track it.
+            addConversationToHistory(message);
+        }
+
+        // Add User Message
         appendMessage('user', message);
-        userInput.value = ''; // Clear input field
-        setProcessing(true); // Set processing state to true
+        saveCurrentConversation(); // Save state
+
+        userInput.value = '';
+        setProcessing(true);
 
         try {
-            // Send POST request to the chat API
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ message }) // Send message as JSON
+                body: JSON.stringify({ message })
             });
 
-            const reader = response.body.getReader(); // Get a reader for the response stream
-            const decoder = new TextDecoder(); // Create a TextDecoder to decode binary chunks
-            let buffer = ''; // Buffer to hold incomplete lines
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
-                const { done, value } = await reader.read(); // Read the next chunk
-                if (done) break; // Exit loop if stream is finished
+                const { done, value } = await reader.read();
+                if (done) break;
 
-                buffer += decoder.decode(value, { stream: true }); // Decode chunk and append to buffer
-                const lines = buffer.split('\n'); // Split buffer into lines
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
 
                 // Process all complete lines
-                buffer = lines.pop(); // Keep the last (potentially incomplete) line in the buffer
+                buffer = lines.pop();
 
                 for (const line of lines) {
-                    if (line.trim()) { // If line is not empty
+                    if (line.trim()) {
                         try {
-                            const event = JSON.parse(line); // Parse JSON event
-                            handleEvent(event); // Handle the event
+                            const event = JSON.parse(line);
+                            handleEvent(event);
                         } catch (e) {
-                            console.error('Error parsing JSON:', e); // Log parsing errors
+                            console.error('Error parsing JSON:', e);
                         }
                     }
                 }
             }
         } catch (error) {
-            console.error('Error:', error); // Log network or other errors
-            appendMessage('assistant', 'Sorry, something went wrong. Please try again.'); // Show error message to user
+            console.error('Error:', error);
+            appendMessage('assistant', 'Sorry, something went wrong. Please try again.');
         } finally {
-            setProcessing(false); // Reset processing state
+            setProcessing(false);
+            saveCurrentConversation(); // Save final state
         }
     });
 
     function handleEvent(event) {
-        // Dispatch events to appropriate handlers based on type
         switch (event.type) {
             case 'message':
-                appendMessage('assistant', event.content); // Append assistant message
+                // Only show messages that don't contain raw tool output
+                if (!event.content.includes('```tool_outputs')) {
+                    appendMessage('assistant', event.content);
+                }
                 break;
             case 'tool_call':
-                appendToolCall(event.name, event.arguments); // Append tool call display
+                appendToolCall(event.name, event.arguments);
                 break;
             case 'tool_result':
-                updateToolResult(event.name, event.content, event.is_error); // Update tool call with result
+                // Just update the status, don't display the raw result
+                updateToolResult(event.name, event.content, event.is_error);
                 break;
             case 'error':
-                appendMessage('assistant', `Error: ${event.content}`); // Append error message
+                appendMessage('assistant', `Error: ${event.content}`);
                 break;
         }
     }
 
     function appendMessage(role, content) {
-        // Create and append a message element to the chat container
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${role}`; // Set class based on role (user/assistant)
+        messageDiv.className = `message ${role}`;
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        contentDiv.textContent = content; // Set message text
+
+        // Render Markdown links: [text](url) -> <a href="url" target="_blank">text</a>
+        // Also handle newlines
+        let formattedContent = escapeHtml(content)
+            .replace(/\n/g, '<br>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+        contentDiv.innerHTML = formattedContent;
 
         messageDiv.appendChild(contentDiv);
         chatContainer.appendChild(messageDiv);
-        scrollToBottom(); // Scroll to bottom to show new message
+        scrollToBottom();
+
+        // Update internal state
+        conversationMessages.push({ role, content });
     }
 
     function appendToolCall(name, args) {
-        // Create and append a tool call visualization
         const toolDiv = document.createElement('div');
         toolDiv.className = 'tool-call';
-        toolDiv.id = `tool-${Date.now()}`; // Generate a simple unique ID
+        toolDiv.id = `tool-${Date.now()}`; // Simple ID generation
 
-        // Set inner HTML for tool call structure
+        // Get friendly display text
+        const displayInfo = getToolDisplayInfo(name, args);
+
         toolDiv.innerHTML = `
             <div class="tool-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                ${displayInfo.icon}
             </div>
             <div class="tool-details">
-                <div class="tool-name">${formatToolName(name)}</div>
-                <div class="tool-args">${JSON.stringify(args)}</div>
+                <div class="tool-name">${displayInfo.title}</div>
+                <div class="tool-args">${displayInfo.description}</div>
             </div>
-            <div class="tool-status running">Running</div>
+            <div class="tool-status running">${displayInfo.runningText}</div>
         `;
 
         chatContainer.appendChild(toolDiv);
         scrollToBottom();
 
-        // Store reference to update later (simplification: assuming sequential tool calls for now)
+        // Store reference to update later
         window.lastToolDiv = toolDiv;
+
+        // Add to history state (simplified)
+        conversationMessages.push({
+            role: 'tool_call_ui',
+            name,
+            args,
+            displayInfo
+        });
+    }
+
+    function getToolDisplayInfo(name, args) {
+        // Return friendly display text based on tool type
+        switch (name) {
+            case 'search_flights':
+                return {
+                    title: 'Flight Search',
+                    description: `${args.origin || '?'} → ${args.destination || '?'} on ${args.date || '?'}`,
+                    runningText: 'Searching...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"></path></svg>'
+                };
+            case 'get_forecast':
+                return {
+                    title: 'Weather Forecast',
+                    description: `${args.location || '?'} on ${args.date || '?'}`,
+                    runningText: 'Checking weather...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path><circle cx="12" cy="12" r="5"></circle></svg>'
+                };
+            case 'rent_car':
+                return {
+                    title: 'Car Rental',
+                    description: `${args.location || '?'} from ${args.start_date || '?'} to ${args.end_date || '?'}`,
+                    runningText: 'Searching cars...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg>'
+                };
+            case 'book_flight':
+                return {
+                    title: 'Flight Booking',
+                    description: `Booking for ${args.passenger_name || '?'}`,
+                    runningText: 'Booking...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg>'
+                };
+            case 'process_payment':
+                return {
+                    title: 'Payment Processing',
+                    description: `${args.amount || '?'} ${args.currency || ''}`,
+                    runningText: 'Processing...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>'
+                };
+            default:
+                return {
+                    title: formatToolName(name),
+                    description: JSON.stringify(args),
+                    runningText: 'Running...',
+                    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+                };
+        }
     }
 
     function updateToolResult(name, content, isError) {
-        // Update the status of the last tool call
         if (window.lastToolDiv) {
             const statusDiv = window.lastToolDiv.querySelector('.tool-status');
-            statusDiv.classList.remove('running'); // Remove running class
+            statusDiv.classList.remove('running');
 
             if (isError) {
-                statusDiv.textContent = 'Error'; // Set status to Error
+                statusDiv.textContent = 'Error';
                 statusDiv.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
                 statusDiv.style.color = '#ef4444';
             } else {
-                statusDiv.textContent = 'Completed'; // Set status to Completed
+                statusDiv.textContent = 'Completed';
                 statusDiv.style.backgroundColor = 'rgba(34, 197, 94, 0.1)';
                 statusDiv.style.color = '#22c55e';
             }
-            window.lastToolDiv = null; // Clear reference
+            window.lastToolDiv = null;
         }
     }
 
     function formatToolName(name) {
-        // Format tool name for display (e.g., "search_flights" -> "Search Flights")
         return name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
     }
 
     function scrollToBottom() {
-        // Scroll the chat container to the bottom
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
     function setProcessing(processing) {
-        // Update UI state based on processing flag
         isProcessing = processing;
-        userInput.disabled = processing; // Disable input
-        sendBtn.disabled = processing; // Disable button
+        userInput.disabled = processing;
+        sendBtn.disabled = processing;
 
         if (processing) {
-            statusDot.classList.add('busy'); // Set dot to busy
-            statusText.textContent = 'Thinking...'; // Update text
+            statusDot.classList.add('busy');
+            statusText.textContent = 'Thinking...';
+
+            // Add "Thinking" bubble
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'message assistant thinking-bubble';
+            thinkingDiv.id = 'thinking-indicator';
+            thinkingDiv.innerHTML = `
+                <div class="message-content">
+                    <span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+                </div>
+            `;
+            chatContainer.appendChild(thinkingDiv);
+            scrollToBottom();
         } else {
-            statusDot.classList.remove('busy'); // Remove busy state
-            statusText.textContent = 'Ready'; // Update text
-            userInput.focus(); // Focus input
+            statusDot.classList.remove('busy');
+            statusText.textContent = 'Ready';
+            userInput.focus();
+
+            // Remove "Thinking" bubble
+            const thinkingDiv = document.getElementById('thinking-indicator');
+            if (thinkingDiv) {
+                thinkingDiv.remove();
+            }
         }
+    }
+
+    // Search History Functions
+    function loadSearchHistory() {
+        try {
+            const saved = localStorage.getItem('travelSearchHistory');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            console.error('Error loading search history:', e);
+            return [];
+        }
+    }
+
+    function saveSearchHistory() {
+        try {
+            localStorage.setItem('travelSearchHistory', JSON.stringify(searchHistory));
+        } catch (e) {
+            console.error('Error saving search history:', e);
+        }
+    }
+
+    function saveCurrentConversation() {
+        if (!currentConversationId) return;
+
+        const index = searchHistory.findIndex(c => c.id === currentConversationId);
+        if (index !== -1) {
+            searchHistory[index].messages = conversationMessages;
+            saveSearchHistory();
+        }
+    }
+
+    function addConversationToHistory(firstMessage) {
+        const conversationItem = {
+            id: currentConversationId,
+            title: firstMessage.length > 50 ? firstMessage.substring(0, 50) + '...' : firstMessage,
+            timestamp: new Date().toISOString(),
+            messages: [] // Will be populated as we go
+        };
+
+        // Add to beginning (most recent first)
+        searchHistory.unshift(conversationItem);
+
+        // Limit history to 50 conversations
+        if (searchHistory.length > 50) {
+            searchHistory = searchHistory.slice(0, 50);
+        }
+
+        saveSearchHistory();
+        renderHistory();
+    }
+
+    function startNewConversation() {
+        // Clear current conversation
+        chatContainer.innerHTML = '';
+        currentConversationId = null;
+        conversationMessages = [];
+        userInput.value = '';
+        userInput.focus();
+
+        // Remove active class from history
+        document.querySelectorAll('.history-item').forEach(item => item.classList.remove('active'));
+    }
+
+    function loadConversation(id) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (!conversation) return;
+
+        currentConversationId = id;
+        conversationMessages = conversation.messages || [];
+
+        // Clear and rebuild chat
+        chatContainer.innerHTML = '';
+
+        // Replay messages
+        conversationMessages.forEach(msg => {
+            if (msg.role === 'tool_call_ui') {
+                // Reconstruct tool call UI
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool-call';
+                // We don't need ID for history items really
+
+                const displayInfo = msg.displayInfo || getToolDisplayInfo(msg.name, msg.args);
+
+                toolDiv.innerHTML = `
+                    <div class="tool-icon">
+                        ${displayInfo.icon}
+                    </div>
+                    <div class="tool-details">
+                        <div class="tool-name">${displayInfo.title}</div>
+                        <div class="tool-args">${displayInfo.description}</div>
+                    </div>
+                    <div class="tool-status completed" style="background-color: rgba(34, 197, 94, 0.1); color: #22c55e;">Completed</div>
+                `;
+                chatContainer.appendChild(toolDiv);
+            } else {
+                appendMessage(msg.role, msg.content);
+            }
+        });
+
+        // Remove duplicate messages from state (appendMessage adds them again)
+        // Actually appendMessage adds to conversationMessages, so we should reset it before replaying
+        // But wait, appendMessage pushes to conversationMessages. 
+        // So if we loop and call appendMessage, we are doubling the array.
+        // Let's fix this by decoupling UI rendering from state update in appendMessage, 
+        // OR just reset conversationMessages after replaying?
+        // Better: make appendMessage NOT update state, handle state separately.
+        // But for now, let's just reset it to the loaded messages after replaying.
+        conversationMessages = conversation.messages || [];
+
+        scrollToBottom();
+        renderHistory();
+    }
+
+    function deleteConversation(id, event) {
+        event.stopPropagation(); // Prevent clicking the item
+        if (confirm('Delete this conversation?')) {
+            searchHistory = searchHistory.filter(c => c.id !== id);
+            saveSearchHistory();
+            renderHistory();
+
+            if (currentConversationId === id) {
+                startNewConversation();
+            }
+        }
+    }
+
+    function renderHistory() {
+        if (searchHistory.length === 0) {
+            historyList.innerHTML = '<div class="history-empty">No search history yet</div>';
+            return;
+        }
+
+        historyList.innerHTML = '';
+        searchHistory.forEach((conversation) => {
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+
+            // Add active class if this is the current conversation
+            if (conversation.id === currentConversationId) {
+                historyItem.classList.add('active');
+            }
+
+            historyItem.innerHTML = `
+                <div class="history-item-content">
+                    <div class="history-item-text">${escapeHtml(conversation.title)}</div>
+                    <div class="history-item-time">${formatTimestamp(conversation.timestamp)}</div>
+                </div>
+                <button class="delete-history-btn" title="Delete">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            `;
+
+            historyItem.addEventListener('click', () => {
+                loadConversation(conversation.id);
+            });
+
+            // Add delete handler
+            const deleteBtn = historyItem.querySelector('.delete-history-btn');
+            deleteBtn.addEventListener('click', (e) => deleteConversation(conversation.id, e));
+
+            historyList.appendChild(historyItem);
+        });
+    }
+
+    function formatTimestamp(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+
+        return date.toLocaleDateString();
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 });

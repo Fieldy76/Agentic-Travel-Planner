@@ -20,7 +20,8 @@ from travel_agent.tools import (
     book_flight, 
     rent_car, 
     get_forecast, 
-    process_payment
+    process_payment,
+    get_current_datetime
 )
 
 app = Flask(__name__, static_folder='static')
@@ -90,6 +91,7 @@ def initialize_agent():
     server.register_tool(rent_car)
     server.register_tool(get_forecast)
     server.register_tool(process_payment)
+    server.register_tool(get_current_datetime)  # New tool for date/time awareness
 
     agent = AgentOrchestrator(llm, server)
     logger.info(f"Agente inizializzato con successo usando: {provider_name.upper()}")

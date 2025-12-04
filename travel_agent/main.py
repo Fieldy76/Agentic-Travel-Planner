@@ -4,6 +4,11 @@ import sys
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 from travel_agent.config import Config
 from travel_agent.agent.llm import get_llm_provider
 from travel_agent.mcp.mcp_server import MCPServer
