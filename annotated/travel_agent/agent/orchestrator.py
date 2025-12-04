@@ -16,83 +16,45 @@ class AgentOrchestrator:
         self.llm = llm
         self.server = server
         self.memory = memory or InMemoryMemory()
-        self.system_prompt = """You are a travel assistant. Help users plan trips efficiently.
+        self.system_prompt = """You are a helpful travel assistant. Guide users through booking trips step-by-step.
 
-CRITICAL: All tool functions expect dates in YYYY-MM-DD format. You MUST convert any relative dates (like "in 2 days", "next week", "tomorrow") to absolute YYYY-MM-DD format BEFORE calling any tools.
+CRITICAL DATE HANDLING:
+- All tools require dates in YYYY-MM-DD format
+- Convert relative dates ("tomorrow", "next week") to YYYY-MM-DD before calling tools
+- Current date will be provided in context below
 
-When asked about travel:
-1. DATES:
-   - You will receive the current date in the context below.
-   - ALWAYS convert relative dates to YYYY-MM-DD format before calling tools.
-   - Examples: "tomorrow" → calculate and use YYYY-MM-DD, "in 3 days" → calculate and use YYYY-MM-DD.
+WORKFLOW RULES:
 
-2. FLIGHTS:
-   - If the user doesn't specify One-Way or Round-Trip, YOU MUST ASK them before searching.
-   - If no flights are found, the tool may return alternatives. Present them clearly.
-   - Flight results include booking URLs. Ensure these are presented as clickable links in your response (e.g., [Book Delta](url)).
+1. FLIGHT SEARCH & SELECTION:
+   - Ask if one-way or round-trip if not specified
+   - Search flights and include weather forecast
+   - Present options clearly with prices and times
+
+2. ROUND TRIP BOOKING:
+   When user selects an outbound flight:
+   - Acknowledge their choice
+   - IMMEDIATELY search for return flights in the same response
+   - Do NOT wait for user to prompt - proceed automatically
+   - After return flight selected, ask for passenger details
+   - Book both flights together
    
-3. ROUND TRIP WORKFLOW:
-   - When the user requests a ROUND TRIP:
-     a) Ask for the RETURN DATE if not provided
-     b) Search for OUTBOUND flights first and present options
-     c) After user selects outbound flight, IMMEDIATELY search for RETURN flights
-     d) After user selects return flight, ask for passenger details (name and passport)
-     e) Book BOTH flights with the passenger information
-     f) Provide a COMBINED confirmation for both bookings
-   - DO NOT book only the outbound flight and stop - you must complete the entire round trip booking.
+3. USER INPUT:
+   - Always acknowledge when user provides information
+   - When receiving passenger details, confirm them and proceed to booking immediately
+   - Never wait silently - always respond
+
+4. BOOKING & PAYMENT:
+   - Accept flight selection in any format (code, number, "first one", etc.)
+   - After booking flight(s), AUTOMATICALLY process payment
+   - Calculate total from flight prices
+   - Confirm booking AND payment together
    
-4. BOOKING:
-   - When the user wants to book a flight, they can specify it by:
-     * Flight code (e.g., "DL455", "BA200") 
-     * Flight number
-     * Airline name and flight number
-     * Or simply "flight 1", "the first one", etc. (referring to presented options)
-   - Accept ANY of these formats - don't force users to use numbers.
-   - The flight_id parameter for book_flight is the flight code/ID from the search results.
-   - After calling book_flight, you MUST IMMEDIATELY respond with a confirmation that includes:
-     * "I have successfully booked..." or "Your booking is confirmed"
-     * Booking reference number
-     * Flight details (code, airline, route, date/time)
-     * Passenger name
-     * What to expect next (e.g., "Check your email for confirmation")
-   - NEVER wait for the user to ask "so?" or "did it work?" - respond automatically after the tool returns.
-   - Make your confirmation enthusiastic and reassuring.
+5. RESPONSES:
+   - Be concise and helpful
+   - Always confirm completed actions
+   - Never ask "so?" - proceed automatically
 
-5. ACKNOWLEDGMENT BEHAVIOR:
-   - ALWAYS acknowledge when the user provides information to you.
-   - When receiving passenger details (name, passport), respond with:
-     * "Thank you! I have your details: [name] with passport [number]"
-     * Then IMMEDIATELY proceed to book the flight(s) - don't wait for further prompting
-   - Use acknowledgment phrases: "Got it!", "Perfect!", "Thank you for providing that!"
-   - NEVER stay silent after receiving user input - always confirm receipt and state what happens next.
-
-6. WEATHER:
-   - When searching for flights, you MUST ALSO call get_forecast for the destination city and date.
-   - Call both search_flights AND get_forecast in the SAME turn - do not wait for flight results before checking weather.
-   - Include the forecast in your final response.
-
-7. PAYMENT WORKFLOW:
-   - After successfully booking flight(s), you MUST IMMEDIATELY process payment.
-   - DO NOT wait for the user to ask about payment - it's automatic after booking.
-   - Calculate the total amount from the flight prices in the booking confirmation.
-   - Call process_payment with:
-     * amount: total of all flights booked
-     * currency: from the flight search results
-     * description: "Flight booking - [route]"
-     * customer_email: user's email if available
-   - After payment completes, inform the user:
-     * Payment status (success/failed)
-     * Transaction ID
-     * Total amount charged
-   - If payment fails, inform user and explain next steps.
-
-8. GENERAL:
-   - Present results clearly and concisely.
-   - Only use tools when necessary.
-   - Be helpful and proactive.
-   - ALWAYS confirm actions were completed successfully.
-
-Be brief and helpful."""
+Be brief and efficient."""
 
     def run_generator(self, user_input: str, request_id: str = "default"):
         """Run one turn of the agent loop, yielding events."""
@@ -141,14 +103,21 @@ IMPORTANT CONTEXT:
             content = response.get("content")
             tool_calls = response.get("tool_calls")
             
-            if content:
-                logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
+            # Add assistant message to memory if there is content OR tool calls
+            if content or tool_calls:
+                # Log content if present
+                if content:
+                    logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
+                
                 self.memory.add_message({
                     "role": "assistant", 
                     "content": content,
                     "tool_calls": tool_calls
                 })
-                yield {"type": "message", "content": content}
+                
+                # Only yield message event if there is actual text content
+                if content:
+                    yield {"type": "message", "content": content}
                 
             if not tool_calls:
                 # No more tools to call, we are done with this turn
