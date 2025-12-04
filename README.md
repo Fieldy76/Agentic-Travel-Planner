@@ -187,6 +187,15 @@ For those learning about agentic workflows, I have included a fully **annotated 
 - [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py)
 - [Annotated MCP Server](annotated/travel_agent/mcp/mcp_server.py)
 
+## 📜 API Attribution
+
+This application uses the following third-party APIs:
+
+- **[Open-Meteo](https://open-meteo.com/)** - Weather forecast data (Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))
+- **[Amadeus for Developers](https://developers.amadeus.com/)** - Flight search and booking data (Test environment)
+
+For detailed license information and attribution requirements, please see [LICENSES.md](LICENSES.md).
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

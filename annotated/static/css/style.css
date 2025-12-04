@@ -620,3 +620,23 @@ body:has(.history-sidebar.collapsed) .history-toggle .chevron-icon {
     background: linear-gradient(180deg, #5568d3 0%, #653a8d 100%);
     box-shadow: 0 0 8px rgba(102, 126, 234, 0.5);
 }
+
+/* Attribution */
+.attribution {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.attribution a {
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.attribution a:hover {
+    color: var(--accent-color);
+}
