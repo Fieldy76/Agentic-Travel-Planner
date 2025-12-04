@@ -30,29 +30,49 @@ WORKFLOW RULES:
    - Search flights and include weather forecast
    - Present options clearly with prices and times
 
-2. ROUND TRIP BOOKING:
+2. **PROACTIVE DATE FLEXIBILITY** (IMPORTANT):
+   - If NO flights are found on the requested date, DO NOT ask the user for another date
+   - IMMEDIATELY and AUTOMATICALLY search for flights on nearby dates:
+     * Search 1 day before the requested date
+     * Search 1 day after the requested date
+     * Search 2 days before if still no results
+     * Search 2 days after if still no results
+   - Present ALL found options together with their dates
+   - Let the user choose from the available alternatives
+   - Be proactive! Users prefer seeing options rather than being asked for input
+
+3. ROUND TRIP BOOKING:
    When user selects an outbound flight:
    - Acknowledge their choice
    - IMMEDIATELY search for return flights in the same response
    - Do NOT wait for user to prompt - proceed automatically
+   - If no return flights on exact date, apply the same proactive date flexibility
    - After return flight selected, ask for passenger details
    - Book both flights together
    
-3. USER INPUT:
+4. USER INPUT:
    - Always acknowledge when user provides information
    - When receiving passenger details, confirm them and proceed to booking immediately
    - Never wait silently - always respond
 
-4. BOOKING & PAYMENT:
+5. BOOKING & PAYMENT:
    - Accept flight selection in any format (code, number, "first one", etc.)
    - After booking flight(s), AUTOMATICALLY process payment
    - Calculate total from flight prices
    - Confirm booking AND payment together
+
+7. **FLIGHT SELECTION VALIDATION** (CRITICAL - NEVER VIOLATE):
+   - ONLY use flight codes that appeared in the ACTUAL search results
+   - If user says "flight 4" but only 3 flights were listed, tell them only 3 options exist
+   - NEVER invent or hallucinate flight codes (e.g., don't make up "NK3775" if it wasn't in results)
+   - When confirming a selection, ALWAYS quote the exact flight code from search results
+   - If unsure which flight the user means, list the available options again and ask
    
-5. RESPONSES:
+6. RESPONSES:
    - Be concise and helpful
    - Always confirm completed actions
    - Never ask "so?" - proceed automatically
+   - Never ask user for dates when you can search yourself
 
 Be brief and efficient."""
 
@@ -92,13 +112,25 @@ IMPORTANT CONTEXT:
             
             # Construct full history with enhanced system prompt
             messages = [{"role": "system", "content": enhanced_system_prompt}] + self.memory.get_messages()
+            # 2. Get LLM Response with Retry Logic
+            response = None
+            max_llm_retries = 3
             
-            try:
-                response = self.llm.call_tool(messages, tools)
-            except Exception as e:
-                logger.error(f"LLM call failed: {e}", extra={"request_id": request_id})
-                yield {"type": "error", "content": str(e)}
+            for attempt in range(max_llm_retries):
+                try:
+                    response = self.llm.call_tool(messages, tools)
+                    break
+                except Exception as e:
+                    logger.warning(f"LLM call failed (attempt {attempt+1}/{max_llm_retries}): {e}", extra={"request_id": request_id})
+                    if attempt == max_llm_retries - 1:
+                        logger.error(f"LLM error after {max_llm_retries} attempts: {e}")
+                        yield {"type": "error", "content": f"I'm having trouble connecting to my brain right now. Error: {str(e)}"}
+                        return # Stop generator
+                    time.sleep(1) # Wait before retry
+            
+            if not response:
                 break
+
             
             content = response.get("content")
             tool_calls = response.get("tool_calls")

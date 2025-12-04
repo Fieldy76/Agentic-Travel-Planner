@@ -8,9 +8,13 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 - **Framework-Free**: Built from scratch using standard Python libraries, demonstrating a deep understanding of agentic architectures.
 - **MCP Integration**: Implements a custom, lightweight MCP Client/Server architecture for standardized tool communication.
 - **Multi-LLM Support**: Seamlessly switch between OpenAI, Anthropic, and Google Gemini models.
+    - **Robust Stability**: Includes auto-retries, safety filter handling, and connection error recovery.
+    - **Google Gemini**: Fully optimized with native system instructions and chat history management.
 - **Integrated Tools**:
     - ✈️ **Flight Search & Booking**: Real-time flight search (Amadeus API) with round-trip support.
         - **Smart Round-Trip Workflow**: Automatically searches for return flights after outbound selection.
+        - **🔍 Proactive Date Flexibility**: When no flights are found, automatically searches ±1-2 days and presents all options.
+        - **✅ Flight Selection Validation**: Prevents hallucinated flight codes - only uses flights from actual search results.
         - **Mock Mode**: Fallback to mock data when API keys are missing.
         - **Smart Booking**: Handles "book the first one" or flight codes.
     - 🚗 **Car Rental**: Reserve vehicles for your trip.
@@ -104,16 +108,13 @@ Open your browser and navigate to `http://localhost:5000`.
 ### Command Line Interface
 Start the CLI agent:
 ```bash
-python travel_agent/main.py
+python travel_agent/cli.py
 ```
-
-**Example Interaction:**
-```
+Type your travel requests and press Enter. Type `quit` to exit.
 You: I want to plan a trip to Tokyo next month.
 Agent: I'd love to help you plan your trip to Tokyo! When exactly are you thinking of going?
 You: From December 10th to December 20th.
 Agent: Great! Let me check flights and weather for you...
-```
 
 ### Web UI Features
 

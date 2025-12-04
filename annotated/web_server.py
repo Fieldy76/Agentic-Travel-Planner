@@ -1,140 +1,139 @@
-import os  # Import the os module for operating system dependent functionality
-import sys  # Import the sys module for system-specific parameters and functions
-import json  # Import the json module for JSON serialization and deserialization
-import logging  # Import the logging module for tracking events
-from flask import Flask, request, jsonify, Response, send_from_directory  # Import Flask components for web server creation
-from dotenv import load_dotenv  # Import load_dotenv to load environment variables from a .env file
+import os
+import sys
+import json
+import logging
+from flask import Flask, request, jsonify, Response, send_from_directory
+from dotenv import load_dotenv
 
 # Add project root to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Append the current directory to sys.path to ensure local modules can be imported
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from travel_agent.config import Config  # Import the Config class for application configuration
-from travel_agent.agent.llm import get_llm_provider  # Import helper to get the LLM provider instance
-from travel_agent.mcp.mcp_server import MCPServer  # Import the MCPServer class for tool management
-from travel_agent.agent.orchestrator import AgentOrchestrator  # Import the AgentOrchestrator class for managing the agent loop
-from travel_agent.tools import (  # Import the available tools for the agent
+# Load environment variables
+load_dotenv()
+
+from travel_agent.config import Config
+from travel_agent.agent.llm import get_llm_provider
+from travel_agent.mcp.mcp_server import MCPServer
+from travel_agent.agent.orchestrator import AgentOrchestrator
+from travel_agent.tools import (
     search_flights, 
     book_flight, 
     rent_car, 
     get_forecast, 
-    process_payment
+    process_payment,
+    get_current_datetime
 )
 
-# Load environment variables
-load_dotenv()  # Load environment variables from the .env file into os.environ
-
-app = Flask(__name__, static_folder='static')  # Initialize the Flask application, specifying the static folder
-logging.basicConfig(level=logging.INFO)  # Configure the logging system to show INFO level logs
-logger = logging.getLogger(__name__)  # Get a logger instance for this module
+app = Flask(__name__, static_folder='static')
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Agent Global Variable
-agent = None  # Define a global variable to hold the initialized agent instance
+agent = None
+
 
 def initialize_agent():
-    """
-    Initializes the agent, LLM provider, and MCP server.
-    Returns True if successful, False otherwise.
-    """
-    global agent  # Access the global agent variable
-    if not Config.validate():  # Validate the configuration (check for required API keys)
-        logger.error("Config validation failed")  # Log an error if validation fails
-        return False  # Return False to indicate failure
-
-    provider_name = os.getenv("LLM_PROVIDER", "openai")  # Get the LLM provider name from env, default to 'openai'
-    api_key = ""  # Initialize api_key variable
+    global agent
     
-    # Select the appropriate API key based on the provider
-    if provider_name == "openai":
-        api_key = Config.OPENAI_API_KEY
-    elif provider_name == "anthropic":
-        api_key = Config.ANTHROPIC_API_KEY
-    elif provider_name == "google":
-        api_key = Config.GOOGLE_API_KEY
+    # La validazione della configurazione dovrebbe ora superare il test se ANTHROPIC_API_KEY è presente.
+    if not Config.validate(): 
+        logger.error("Config validation failed.")
+        return False
+    
+    # 1. SETUP: Inizializza i valori per il routing
+    provider_name = os.getenv("LLM_PROVIDER", "ANTHROPIC").lower()
+    api_key = None
+    
+    # Dizionario di tutti i provider disponibili in ordine di fallback
+    # Puoi cambiare l'ordine a seconda delle tue preferenze
+    provider_map = {
+        "anthropic": Config.ANTHROPIC_API_KEY,
+        "openai": Config.OPENAI_API_KEY,
+        "google": Config.GOOGLE_API_KEY,
+    }
+
+    # 2. LOGICA DI ROUTING FLESSIBILE: Cerca la chiave del provider preferito
+    
+    # Tenta prima il provider specificato in LLM_PROVIDER
+    if provider_name in provider_map and provider_map[provider_name]:
+        api_key = provider_map[provider_name]
         
-    if not api_key:  # Check if the API key was found
-        logger.error(f"API Key for {provider_name} is missing.")  # Log an error if missing
-        return False  # Return False to indicate failure
+    # Se la chiave preferita manca, cerca un fallback valido
+    if not api_key:
+        logger.warning(
+            f"La chiave API per il provider preferito ({provider_name.upper()}) è mancante o vuota. Ricerca di provider alternativi..."
+        )
+        
+        # Iterazione su tutti i provider per il primo con una chiave valida
+        for name, key in provider_map.items():
+            if key:
+                provider_name = name
+                api_key = key
+                logger.info(f"Trovata chiave valida per il provider di fallback: {provider_name.upper()}")
+                break # Esci dal ciclo appena ne trovi uno
+
+    # 3. INIZIALIZZAZIONE DELL'AGENTE (Solo se abbiamo una chiave valida)
+    if not api_key:
+        logger.error("Nessuna chiave LLM API valida trovata per inizializzare l'agente reale.")
+        return False
 
     try:
-        llm = get_llm_provider(provider_name, api_key)  # Initialize the LLM provider with the key
-    except ImportError as e:  # Catch ImportError if the provider's library is missing
-        logger.error(f"Error initializing LLM: {e}")  # Log the error
-        return False  # Return False to indicate failure
+        # Chiama il tuo router LLM con il provider e la chiave trovati
+        llm = get_llm_provider(provider_name, api_key)
+    except ImportError as e:
+        logger.error(f"Errore nell'inizializzazione dell'LLM (SDK mancante?): {e}")
+        return False
 
-    server = MCPServer()  # Initialize the MCP Server
-    # Register the available tools with the server
+    # Il resto della tua logica di inizializzazione
+    server = MCPServer()
     server.register_tool(search_flights)
     server.register_tool(book_flight)
     server.register_tool(rent_car)
     server.register_tool(get_forecast)
     server.register_tool(process_payment)
+    server.register_tool(get_current_datetime)  # New tool for date/time awareness
 
-    agent = AgentOrchestrator(llm, server)  # Initialize the AgentOrchestrator with the LLM and Server
-    logger.info(f"Agent initialized with {provider_name}")  # Log success message
-    return True  # Return True to indicate success
-
+    agent = AgentOrchestrator(llm, server)
+    logger.info(f"Agente inizializzato con successo usando: {provider_name.upper()}")
+    return True
 @app.route('/')
 def index():
-    """
-    Route handler for the root URL ('/').
-    Serves the index.html file from the static directory.
-    """
-    return send_from_directory('static', 'index.html')  # Send the index.html file to the client
+    return send_from_directory('static', 'index.html')
 
 @app.route('/<path:path>')
 def serve_static(path):
-    """
-    Route handler for static files.
-    Serves any file requested from the static directory.
-    """
-    return send_from_directory('static', path)  # Send the requested file from the static directory
+    return send_from_directory('static', path)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """
-    API endpoint for chat interactions.
-    Expects a JSON payload with a 'message' key.
-    Streams the agent's response as NDJSON (Newline Delimited JSON).
-    """
-    if not agent:  # Check if the agent is initialized
-        return jsonify({"error": "Agent not initialized"}), 500  # Return 500 error if not initialized
+    if not agent:
+        return jsonify({"error": "Agent not initialized"}), 500
     
-    data = request.json  # Get the JSON data from the request
-    user_input = data.get('message')  # Extract the user's message
+    data = request.json
+    user_input = data.get('message')
     
-    if not user_input:  # Check if the message is empty
-        return jsonify({"error": "No message provided"}), 400  # Return 400 error if message is missing
+    if not user_input:
+        return jsonify({"error": "No message provided"}), 400
 
     def generate():
-        """
-        Generator function to stream events from the agent.
-        """
-        # Iterate over events yielded by the agent's run_generator method
         for event in agent.run_generator(user_input):
-            yield json.dumps(event) + "\n"  # Yield each event as a JSON string followed by a newline
+            yield json.dumps(event) + "\n"
 
-    # Return a streaming response with the correct MIME type for NDJSON
     return Response(generate(), mimetype='application/x-ndjson')
 
 if __name__ == '__main__':
-    # Main execution block
-    if not initialize_agent():  # Attempt to initialize the agent
-        logger.warning("Agent initialization failed. Using Mock Agent for UI testing.")  # Log warning if initialization fails
+    if not initialize_agent():
+        logger.warning("Agent initialization failed. Using Mock Agent for UI testing.")
         
-        # Define a MockAgent class for testing UI without API keys
         class MockAgent:
             def run_generator(self, user_input, request_id="mock"):
-                # Simulate receiving a message
                 yield {"type": "message", "content": f"I received your message: '{user_input}'. (Mock Agent)"}
-                # Simulate a tool call
                 yield {"type": "tool_call", "name": "mock_tool", "arguments": {"query": "test"}}
                 import time
-                time.sleep(1)  # Simulate processing time
-                # Simulate a tool result
+                time.sleep(1)
                 yield {"type": "tool_result", "name": "mock_tool", "content": "Mock result", "is_error": False}
-                # Simulate a final response
                 yield {"type": "message", "content": "This is a mock response because API keys are missing."}
 
-        agent = MockAgent()  # Use the MockAgent instance
+        agent = MockAgent()
 
-    app.run(debug=True, port=5000)  # Start the Flask development server on port 5000
+    app.run(debug=True, port=5000)

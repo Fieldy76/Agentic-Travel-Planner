@@ -160,11 +160,20 @@ class AnthropicProvider(LLMProvider):
                             "input": tc["arguments"]
                         })
                 
+                # CRITICAL FIX: Anthropic does not allow empty content blocks
+                if not content_blocks:
+                    # If we somehow have an empty assistant message, skip it or add placeholder
+                    # This shouldn't happen with correct orchestrator logic, but safety first
+                    continue 
+
                 converted_messages.append({
                     "role": "assistant",
                     "content": content_blocks
                 })
             else:
+                # Regular user/system messages
+                if not msg.get("content"):
+                    continue # Skip empty messages
                 converted_messages.append(msg)
 
         kwargs = {
@@ -198,6 +207,15 @@ class GoogleProvider(LLMProvider):
         if not genai:
             raise ImportError("Google Generative AI SDK not installed.")
         genai.configure(api_key=api_key)
+        
+        # Configure safety settings to avoid blocking legitimate tool outputs
+        self.safety_settings = {
+            "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+        }
+        
         self.model = genai.GenerativeModel(model)
 
     def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
@@ -233,9 +251,13 @@ class GoogleProvider(LLMProvider):
                 )]
             ))
             
-        # 1. Convert messages to Google Content format
+        # 1. Extract system instruction and convert messages to Google Content format
+        system_instruction = None
         history = []
         for msg in messages:
+            if msg["role"] == "system":
+                system_instruction = msg["content"]
+                continue  # Don't add system message to history
             # Google Chat roles are 'user' and 'model'
             role = "user" if msg["role"] in ["user", "tool"] else "model"
             parts = []
@@ -243,13 +265,10 @@ class GoogleProvider(LLMProvider):
             if msg["role"] == "tool":
                 # Google expects FunctionResponse
                 tool_name = msg.get("name")
-                if not tool_name:
-                    tool_name = msg.get("tool_name", "tool_result") 
-
                 parts.append(genai.protos.Part(
                     function_response=genai.protos.FunctionResponse(
-                        name=tool_name, 
-                        response={"result": msg["content"]} 
+                        name=msg["name"],
+                        response={"result": msg["content"]}
                     )
                 ))
             elif msg["role"] == "assistant" and msg.get("tool_calls"):
@@ -267,30 +286,55 @@ class GoogleProvider(LLMProvider):
                          )
                      ))
             else:
-                # Regular message with text content
-                content_text = msg.get("content", "")
-                if content_text:  # Only add if content is not empty
-                    parts.append(genai.protos.Part(text=content_text))
-            
+                # Regular text message
+                text_content = msg.get("content", "")
+                if not text_content:
+                    text_content = " " # Placeholder to prevent empty parts
+                
+                parts.append(genai.protos.Part(text=text_content))
+                
             # Only add to history if we have parts
             if parts:
-                history.append(genai.protos.Content(role=role, parts=parts))
+                current_content = genai.protos.Content(role=role, parts=parts)
+                
+                # MERGE LOGIC: If the last message in history has the same role, append parts to it
+                if history and history[-1].role == role:
+                    history[-1].parts.extend(parts)
+                else:
+                    history.append(current_content)
 
-        # 2. Generate the content
-        contents = history[-1] if history else None
-        chat_history = history[:-1] if len(history) > 1 else []
+        # Re-initialize model with system instruction if present
+        # This is lightweight and ensures the system prompt is respected
+        if system_instruction:
+            self.model = genai.GenerativeModel(
+                self.model.model_name, 
+                system_instruction=system_instruction,
+                safety_settings=self.safety_settings
+            )
+
+        # Generate
+        # We need to use the chat interface to maintain history correctly with tools
         
-        if contents is None or not contents.parts:
-            return {"content": "Error: No valid message content to send to Google API.", "tool_calls": None}
+        # Split history into past turns and current turn
+        # The last message in 'history' is the one we want to send now
+        chat_history = history[:-1] if len(history) > 0 else []
+        current_message = history[-1] if len(history) > 0 else None
+        
+        if not current_message:
+             return {"content": "Error: No message content to send.", "tool_calls": None}
 
-        # Use the chat interface to maintain history and send the current message/tool result
         chat = self.model.start_chat(history=chat_history)
         
         # The tools config must be passed with the send_message call
-        response = chat.send_message(
-            contents,
-            tools=google_tools
-        )
+        try:
+            response = chat.send_message(
+                current_message,
+                tools=google_tools,
+                safety_settings=self.safety_settings
+            )
+        except Exception as e:
+            # Catch "model output must contain either output text or tool calls" and other generation errors
+            return {"content": f"I encountered an error generating a response: {str(e)}. Please try again.", "tool_calls": None}
         
         # 3. Decode the Google response
         tool_calls = []

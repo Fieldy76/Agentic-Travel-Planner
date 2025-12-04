@@ -1,71 +1,71 @@
-import inspect  # Import inspect module for introspection
-from typing import Callable, Dict, Any, List  # Import typing utilities
-from .protocol import Tool, create_tool_definition, CallToolResult  # Import protocol definitions
+import inspect
+from typing import Callable, Dict, Any, List
+from .protocol import Tool, create_tool_definition, CallToolResult
 
-class MCPServer:  # Define MCPServer class
-    """A simple in-process MCP Server to host tools."""  # Docstring
+class MCPServer:
+    """A simple in-process MCP Server to host tools."""
     
-    def __init__(self):  # Constructor
-        self.tools: Dict[str, Callable] = {}  # Initialize tools dictionary
-        self.tool_definitions: List[Dict[str, Any]] = []  # Initialize tool definitions list
+    def __init__(self):
+        self.tools: Dict[str, Callable] = {}
+        self.tool_definitions: List[Dict[str, Any]] = []
 
-    def register_tool(self, func: Callable, name: str = None, description: str = None):  # Method to register a tool
-        """Register a python function as a tool."""  # Docstring
-        if name is None:  # Check if name is provided
-            name = func.__name__  # Use function name if not provided
-        if description is None:  # Check if description is provided
-            description = func.__doc__ or ""  # Use function docstring if not provided
+    def register_tool(self, func: Callable, name: str = None, description: str = None):
+        """Register a python function as a tool."""
+        if name is None:
+            name = func.__name__
+        if description is None:
+            description = func.__doc__ or ""
             
         # Inspect function signature to generate schema
-        sig = inspect.signature(func)  # Get function signature
-        parameters = {  # Initialize parameters dictionary
-            "type": "object",  # Set type to object
-            "properties": {},  # Initialize properties
-            "required": []  # Initialize required list
+        sig = inspect.signature(func)
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "required": []
         }
         
-        for param_name, param in sig.parameters.items():  # Iterate through parameters
+        for param_name, param in sig.parameters.items():
             param_type = "string" # Default to string
-            if param.annotation == int:  # Check if int
-                param_type = "integer"  # Set type to integer
-            elif param.annotation == float:  # Check if float
-                param_type = "number"  # Set type to number
-            elif param.annotation == bool:  # Check if bool
-                param_type = "boolean"  # Set type to boolean
-            elif param.annotation == list:  # Check if list
-                param_type = "array"  # Set type to array
-            elif param.annotation == dict:  # Check if dict
-                param_type = "object"  # Set type to object
+            if param.annotation == int:
+                param_type = "integer"
+            elif param.annotation == float:
+                param_type = "number"
+            elif param.annotation == bool:
+                param_type = "boolean"
+            elif param.annotation == list:
+                param_type = "array"
+            elif param.annotation == dict:
+                param_type = "object"
                 
-            parameters["properties"][param_name] = {  # Add parameter property
-                "type": param_type,  # Set type
+            parameters["properties"][param_name] = {
+                "type": param_type,
                 "description": f"Parameter {param_name}" # Could parse docstring for better desc
             }
-            if param.default == inspect.Parameter.empty:  # Check if parameter is required
-                parameters["required"].append(param_name)  # Add to required list
+            if param.default == inspect.Parameter.empty:
+                parameters["required"].append(param_name)
                 
-        self.tools[name] = func  # Add function to tools dictionary
-        self.tool_definitions.append(create_tool_definition(name, description, parameters))  # Add definition to list
+        self.tools[name] = func
+        self.tool_definitions.append(create_tool_definition(name, description, parameters))
 
-    def list_tools(self) -> List[Dict[str, Any]]:  # Method to list tools
-        return self.tool_definitions  # Return tool definitions
+    def list_tools(self) -> List[Dict[str, Any]]:
+        return self.tool_definitions
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> CallToolResult:  # Method to call a tool
-        if name not in self.tools:  # Check if tool exists
-            return CallToolResult(  # Return error result
-                content=[{"type": "text", "text": f"Tool not found: {name}"}],  # Set error message
-                isError=True  # Set error flag
+    def call_tool(self, name: str, arguments: Dict[str, Any]) -> CallToolResult:
+        if name not in self.tools:
+            return CallToolResult(
+                content=[{"type": "text", "text": f"Tool not found: {name}"}],
+                isError=True
             )
             
-        try:  # Try block for execution
-            func = self.tools[name]  # Get function
-            result = func(**arguments)  # Execute function with arguments
-            return CallToolResult(  # Return success result
-                content=[{"type": "text", "text": str(result)}],  # Set result text
-                isError=False  # Set error flag
+        try:
+            func = self.tools[name]
+            result = func(**arguments)
+            return CallToolResult(
+                content=[{"type": "text", "text": str(result)}],
+                isError=False
             )
-        except Exception as e:  # Catch exceptions
-            return CallToolResult(  # Return error result
-                content=[{"type": "text", "text": f"Error executing tool {name}: {str(e)}"}],  # Set error message
-                isError=True  # Set error flag
+        except Exception as e:
+            return CallToolResult(
+                content=[{"type": "text", "text": f"Error executing tool {name}: {str(e)}"}],
+                isError=True
             )
