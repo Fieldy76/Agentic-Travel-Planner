@@ -26,6 +26,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
         - **Auto-Payment**: Automatically processes payment after booking.
     - 📅 **Relative Date Handling**: Natural language date support ("tomorrow", "in 2 days", "next week").
 - **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
+- **🌍 Multi-Language Support**: Agent responds in the same language you write in (Italian, Spanish, French, German, etc.).
 - **📜 Search History**: Full conversation history with localStorage persistence, delete individual conversations, and quick access to previous queries.
 
 ### Production-Ready Features
