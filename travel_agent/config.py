@@ -18,6 +18,11 @@ class Config:
     FLIGHT_API_SECRET = os.getenv("FLIGHT_API_SECRET")  # Required for Amadeus OAuth
     WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
     
+    # Payment Processing (Stripe)
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+    STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+    
     @classmethod
     def validate(cls):
         """Check for missing critical keys."""

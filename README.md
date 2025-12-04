@@ -16,7 +16,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
         - Alternative flight suggestions when no results found
     - 🚗 **Car Rental**: Reserve vehicles for your trip.
     - ☀️ **Weather Forecast**: Automatically fetched with flight searches.
-    - 💳 **Payments**: Secure payment processing simulation.
+    - 💳 **Payments**: Production-ready Stripe integration with automatic fallback to mock.
     - 📅 **Relative Date Handling**: Natural language date support ("tomorrow", "in 2 days", "next week").
 - **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
 - **📜 Search History**: Full conversation history with localStorage persistence, delete individual conversations, and quick access to previous queries.
@@ -68,7 +68,20 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 
     # Optional Service Keys (Mocks used if missing)
     FLIGHT_API_KEY=...
+    FLIGHT_API_SECRET=...
+    
+    # Payment Processing (Stripe - Optional, uses mock if missing)
+    STRIPE_SECRET_KEY=sk_test_...
+    STRIPE_PUBLISHABLE_KEY=pk_test_...
     ```
+
+    > [!TIP]
+    > **Stripe Setup (Optional):**
+    > 1. Create a free account at [stripe.com](https://stripe.com)
+    > 2. Get your test API keys from [Dashboard → Developers → API keys](https://dashboard.stripe.com/test/apikeys)
+    > 3. Add them to your `.env` file
+    > 4. Use test card `4242 4242 4242 4242` with any future expiry and CVC
+    > 5. The app falls back to mock payments if Stripe keys are not configured
 
     > [!IMPORTANT]
     > The application will automatically load these keys from the `.env` file. Ensure this file exists in the root directory before running the application.

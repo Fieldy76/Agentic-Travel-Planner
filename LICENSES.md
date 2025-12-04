@@ -47,6 +47,38 @@ We use the Amadeus API for flight search and booking functionality. The Amadeus 
 
 ---
 
+## Payment Processing: Stripe
+
+**Service:** [Stripe](https://stripe.com/)  
+**License:** [Stripe Services Agreement](https://stripe.com/legal/ssa)
+
+We use Stripe for secure payment processing. Stripe is a PCI-compliant payment platform that handles all sensitive card data, ensuring your application never stores payment information.
+
+**Attribution Requirements:**
+- No general attribution requirements
+- Must comply with Stripe terms of service
+- Display clear payment terms to customers
+
+**What we use:**
+- Payment Intents API
+- Automatic payment methods
+- 3D Secure authentication
+- Payment webhooks (optional)
+
+**Pricing:**
+- 2.9% + $0.30 per successful card charge (US)
+- Pricing varies by region
+- No setup fees or monthly fees
+
+**Note:** This integration uses Stripe's **test mode** for development. For production use:
+1. Obtain production API keys from your Stripe Dashboard
+2. Update environment variables with production keys
+3. Complete Stripe account verification
+4. Set up production webhooks (optional)
+5. Configure payment terms and refund policies
+
+---
+
 ## LLM Providers
 
 This application supports multiple LLM providers. Users must provide their own API keys:
