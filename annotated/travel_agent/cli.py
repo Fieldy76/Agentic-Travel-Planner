@@ -18,7 +18,8 @@ from travel_agent.tools import (
     book_flight, 
     rent_car, 
     get_forecast, 
-    process_payment
+    process_payment,
+    get_current_datetime
 )
 
 def main():
@@ -28,7 +29,7 @@ def main():
 
     # 2. Select LLM Provider
     # Default to OpenAI, but can be changed via env or args
-    provider_name = os.getenv("LLM_PROVIDER", "openai")
+    provider_name = os.getenv("LLM_PROVIDER", "openai").lower()
     api_key = ""
     
     if provider_name == "openai":
@@ -55,6 +56,7 @@ def main():
     server.register_tool(rent_car)
     server.register_tool(get_forecast)
     server.register_tool(process_payment)
+    server.register_tool(get_current_datetime)
 
     # 4. Initialize Agent
     agent = AgentOrchestrator(llm, server)

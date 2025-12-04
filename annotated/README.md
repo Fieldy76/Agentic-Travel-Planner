@@ -10,11 +10,14 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 - **Multi-LLM Support**: Seamlessly switch between OpenAI, Anthropic, and Google Gemini models.
     - **Robust Stability**: Includes auto-retries, safety filter handling, and connection error recovery.
     - **Google Gemini**: Fully optimized with native system instructions and chat history management.
+    - **Flexible Configuration**: Case-insensitive `LLM_PROVIDER` (e.g., `GOOGLE` or `google` both work).
 - **Integrated Tools**:
     - ✈️ **Flight Search & Booking**: Real-time flight search (Amadeus API) with round-trip support.
         - **Smart Round-Trip Workflow**: Automatically searches for return flights after outbound selection.
         - **🔍 Proactive Date Flexibility**: When no flights are found, automatically searches ±1-2 days and presents all options.
         - **✅ Flight Selection Validation**: Prevents hallucinated flight codes - only uses flights from actual search results.
+        - **👥 Multi-Passenger Pricing**: Automatically calculates total price × number of passengers.
+        - **📋 Passenger Details Confirmation**: Confirms name-passport pairings before booking to avoid mix-ups.
         - **Mock Mode**: Fallback to mock data when API keys are missing.
         - **Smart Booking**: Handles "book the first one" or flight codes.
     - 🚗 **Car Rental**: Reserve vehicles for your trip.

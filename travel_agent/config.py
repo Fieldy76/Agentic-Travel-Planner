@@ -1,9 +1,11 @@
 import os
 from dotenv import load_dotenv
 import json
+from pathlib import Path
 
-# Load environment variables from .env file
-# load_dotenv()
+# Load environment variables from .env file in project root
+_project_root = Path(__file__).resolve().parent.parent
+load_dotenv(_project_root / ".env")
 
 class Config:
     """Configuration management for the Travel Agent."""
