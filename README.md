@@ -9,7 +9,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 - **MCP Integration**: Implements a custom, lightweight MCP Client/Server architecture for standardized tool communication.
 - **Multi-LLM Support**: Seamlessly switch between OpenAI, Anthropic, and Google Gemini models.
     - **Robust Stability**: Includes auto-retries, safety filter handling, and connection error recovery.
-    - **Google Gemini**: Fully optimized with native system instructions and chat history management.
+    - **Google Gemini 2.0**: Native support for multimodal inputs (Text + Files) and optimized instruction following.
     - **Flexible Configuration**: Case-insensitive `LLM_PROVIDER` (e.g., `GOOGLE` or `google` both work).
 - **Integrated Tools**:
     - ✈️ **Flight Search & Booking**: Real-time flight search (Amadeus API) with round-trip support.
@@ -135,7 +135,7 @@ The web interface includes:
 - **🔗 Clickable Links**: Flight booking links rendered as clickable elements
 - **🫧 Live Thinking Indicator**: Animated "Thinking..." text with bouncing dots
 - **📱 Adaptive Chat Layout**: Smooth transition from welcome screen to a clean, pill-based conversation view
-- **📎 Simplified Attachments**: Clean file upload menu for sharing documents
+- **📎 Seamless File Uploads**: Upload documents (PDFs, images) directly for analysis by the agent.
 - **📜 Collapsible Search History Sidebar**: 
   - Starts collapsed for a cleaner initial view
   - Animated chevron icon rotates on toggle
@@ -145,6 +145,7 @@ The web interface includes:
   - Smart timestamps (e.g., "5m ago", "2h ago", "3d ago")
   - Clear all history with confirmation
   - Persistent storage using localStorage (up to 50 conversations)
+- **✨ Custom Confirmation Modals**: Elegant, themed verification steps that replace browser-native popups.
 - **✈️ Flexible Flight Booking**:
   - Accept multiple selection formats (flight codes, numbers, or natural language)
   - Clear confirmation messages with booking reference and details

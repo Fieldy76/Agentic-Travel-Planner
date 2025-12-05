@@ -5,30 +5,24 @@ import asyncio
 from datetime import datetime
 from .llm import LLMProvider
 from ..mcp.mcp_server import MCPServer
+# Abstract memory interface allow for swapping storage backends (Redis, Postgres, etc.)
 from .memory import AgentMemory, InMemoryMemory
 from ..config import setup_logging
 
-# Ensure logging is configured when this module is imported
+# Ensure logging is configured
 setup_logging()
 logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
     """
-    The Agent Orchestrator manages the core loop of the agent's cognition:
-    1. Receive user input
-    2. Consult LLM with context and tools
-    3. Execute tools if requested
-    4. Feed results back to LLM
-    5. Repeat until a final text response is generated
+    Core brain of the agent.
+    Manages the ReAct loop: Thought -> Action -> Observation -> Thought.
+    Now supports multimodal inputs (files).
     """
     def __init__(self, llm: LLMProvider, server: MCPServer, memory: Optional[AgentMemory] = None):
         self.llm = llm
         self.server = server
         self.memory = memory or InMemoryMemory()
-        
-        # The System Prompt defines the Agent's personality and core rules.
-        # It's crucial for instructing the LLM on how to behave, especially for
-        # complex tasks like handling dates, multiple languages, and booking workflows.
         self.system_prompt = """You are a helpful travel assistant. Guide users through booking trips step-by-step.
 
 LANGUAGE:
@@ -46,6 +40,7 @@ CRITICAL DATE HANDLING:
 WORKFLOW RULES:
 
 1. FLIGHT SEARCH & SELECTION:
+   - Ask for the departure city (origin) if not specified. NEVER assume the origin.
    - Ask if one-way or round-trip if not specified
    - Search flights and include weather forecast
    - Present options clearly with prices and times
@@ -111,38 +106,46 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
-    async def run_generator(self, user_input: str, request_id: str = "default"):
+    async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """
         Run one turn of the agent loop, yielding events (Async Generator).
-        This method is designed to be streamed to the client (Server-Sent Events).
+        Can accept file attachments for multimodal processing.
         """
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
-        # Add the new user message to conversation memory
-        self.memory.add_message({"role": "user", "content": user_input})
+        # Construct user message with potential file attachment
+        # Standard format: {role, content}
+        # Multimodal extension: {role, content, files: [{mime_type, data}]}
+        message_payload = {"role": "user", "content": user_input}
+        if file_data and mime_type:
+            # We store the raw bytes in memory. The LLM Provider is responsible for formatting this
+            # correctly for the specific API (e.g., converting to Base64 or Blob)
+            message_payload["files"] = [{"mime_type": mime_type, "data": file_data}]
+            logger.info(f"Processing attachment: {mime_type} ({len(file_data)} bytes)")
         
-        # Limit the number of turns (thought/action cycles) to prevent infinite loops.
-        # We increased this to 10 to support complex multi-step flows like booking + payment.
+        # Add user message to conversation history
+        self.memory.add_message(message_payload)
+        
+        # Main Loop - Increased to 10 to handle multi-step flows like booking
         max_turns = 10
         current_turn = 0
         
         while current_turn < max_turns:
             current_turn += 1
             
-            # 1. Get available tools from the MCP Server
-            # The agent dynamically sees what tools are available (e.g., search_flights, rent_car)
+            # 1. Get available tools
+            # We list tools on every turn in case dynamic tools are added
             tools = self.server.list_tools()
             
-            # 2. Prepare the context for the LLM
+            # 2. Call LLM with current date/time context
             logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
             
-            # Inject dynamic time context into the system prompt.
-            # This is critical for the LLM to understand what "tomorrow" or "Jan 30" implies relative to today.
+            # Inject dynamic context (current date) into the system prompt
+            # This is crucial for "tomorrow", "next week" resolution
             now = datetime.now()
             current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
             current_date = now.strftime("%Y-%m-%d")
             
-            # Enhanced System Prompt with specific date inference rules to fix recent issues with year nagging.
             enhanced_system_prompt = f"""{self.system_prompt}
 
 CRITICAL DATE CONTEXT:
@@ -154,34 +157,33 @@ CRITICAL DATE CONTEXT:
 - DO NOT ask for the year if it can be inferred from the rules above.
 """
             
-            # Construct full message history for the LLM call
+            # Construct full history: System Prompt + Chat History
             messages = [{"role": "system", "content": enhanced_system_prompt}] + self.memory.get_messages()
             
-            # 3. Call The LLM (with Retry Logic)
-            # We wrap the LLM call in a retry loop to handle transient API errors or rate limits.
+            # 2. Get LLM Response with Retry Logic
             response = None
             max_llm_retries = 3
             
             for attempt in range(max_llm_retries):
                 try:
+                    # The LLM Provider handles the specific API logic (OpenAI/Anthropic/Gemini)
                     response = await self.llm.call_tool(messages, tools)
                     break
                 except Exception as e:
                     logger.warning(f"LLM call failed (attempt {attempt+1}/{max_llm_retries}): {e}", extra={"request_id": request_id})
                     if attempt == max_llm_retries - 1:
                         logger.error(f"LLM error after {max_llm_retries} attempts: {e}")
-                        # Yield an error event if all retries fail
                         yield {"type": "error", "content": f"I'm having trouble connecting to my brain right now. Error: {str(e)}"}
                         return # Stop generator
-                    await asyncio.sleep(1) # Wait before retry (non-blocking sleep)
+                    await asyncio.sleep(1) # Wait before retry (async sleep)
             
             if not response:
                 break
 
+            
             content = response.get("content")
             tool_calls = response.get("tool_calls")
             
-            # 4. Handle LLM Response
             # Add assistant message to memory if there is content OR tool calls
             if content or tool_calls:
                 # Log content if present
@@ -194,7 +196,7 @@ CRITICAL DATE CONTEXT:
                     "tool_calls": tool_calls
                 })
                 
-                # Only yield message event if there is actual text content to display to the user
+                # Only yield message event if there is actual text content
                 if content:
                     yield {"type": "message", "content": content}
                 
@@ -203,23 +205,24 @@ CRITICAL DATE CONTEXT:
                 logger.info("No tool calls, turn complete", extra={"request_id": request_id})
                 break
                 
-            # 5. Execute Tools (if any)
+            # 3. Execute Tools
             for tool_call in tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["arguments"]
                 tool_id = tool_call["id"]
                 
                 logger.info(f"Executing tool: {tool_name}", extra={"request_id": request_id, "tool_args": tool_args})
-                # Yield a tool_call event so the UI can show "Checking flights..." capabilities
+                # Yield tool call event to UI
                 yield {"type": "tool_call", "name": tool_name, "arguments": tool_args}
                 
-                # Retry logic for Tool Execution
+                # Retry logic for tool execution
                 max_retries = 3
                 result_text = ""
                 is_error = False
                 
                 for attempt in range(max_retries):
                     try:
+                        # Call tool via MCP Server
                         result = await self.server.call_tool(tool_name, tool_args)
                         result_text = result.content[0]["text"]
                         is_error = result.isError
@@ -230,12 +233,13 @@ CRITICAL DATE CONTEXT:
                             result_text = f"Error executing tool {tool_name}: {str(e)}"
                             is_error = True
                         else:
-                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff
+                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff (async)
                 
                 logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
+                # Yield tool result event to UI
                 yield {"type": "tool_result", "name": tool_name, "content": result_text, "is_error": is_error}
                 
-                # Append the tool result to memory so the LLM knows what happened
+                # Add tool result to memory so LLM sees it in next turn
                 self.memory.add_message({
                     "role": "tool",
                     "tool_call_id": tool_id,
@@ -244,10 +248,7 @@ CRITICAL DATE CONTEXT:
                 })
 
     async def run(self, user_input: str, request_id: str = "default"):
-        """
-        Run one turn of the agent loop (async wrapper for CLI/Testing).
-        This consumes the generator and prints events to stdout.
-        """
+        """Run one turn of the agent loop (async wrapper for CLI/Testing)."""
         async for event in self.run_generator(user_input, request_id):
             if event["type"] == "message":
                 print(f"Agent: {event['content']}")
