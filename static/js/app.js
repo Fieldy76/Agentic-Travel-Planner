@@ -10,10 +10,117 @@ document.addEventListener('DOMContentLoaded', () => {
     const historySidebar = document.getElementById('history-sidebar');
     const historyList = document.getElementById('history-list');
     const clearHistoryBtn = document.getElementById('clear-history');
+    const newChatBtn = document.getElementById('new-chat-btn'); // New Chat Button
+
+    // Search Modal Elements
+    const searchBtn = document.getElementById('search-btn');
+    const searchModal = document.getElementById('search-modal');
+    const modalSearchInput = document.getElementById('modal-search-input');
+    const searchResultsList = document.getElementById('search-results-list');
 
     let isProcessing = false;
     let searchHistory = loadSearchHistory();
     let currentConversationId = null;
+
+    // Search Modal Logic
+    if (searchBtn && searchModal) {
+        searchBtn.addEventListener('click', () => {
+            openSearchModal();
+        });
+
+        // Close on outside click
+        searchModal.addEventListener('click', (e) => {
+            if (e.target === searchModal) {
+                closeSearchModal();
+            }
+        });
+
+        // Search filtering
+        modalSearchInput.addEventListener('input', (e) => {
+            renderSearchResults(e.target.value);
+        });
+    }
+
+    function openSearchModal() {
+        if (!searchModal) return;
+        searchModal.classList.remove('hidden');
+        requestAnimationFrame(() => searchModal.classList.add('active'));
+
+        modalSearchInput.value = '';
+        modalSearchInput.focus();
+        renderSearchResults(); // Show all initially
+    }
+
+    function closeSearchModal() {
+        if (!searchModal) return;
+        searchModal.classList.remove('active');
+        setTimeout(() => searchModal.classList.add('hidden'), 200);
+    }
+
+    function renderSearchResults(query = '') {
+        if (!searchResultsList) return;
+        searchResultsList.innerHTML = '';
+
+        const filteredHistory = searchHistory.filter(c =>
+            c.title.toLowerCase().includes(query.toLowerCase())
+        );
+
+        if (filteredHistory.length === 0) {
+            searchResultsList.innerHTML = '<div style="padding: 1rem; color: #888;">No results found</div>';
+            return;
+        }
+
+        filteredHistory.forEach(conversation => {
+            const item = document.createElement('div');
+            item.className = 'search-result-item';
+
+            // Format time similarly to image "Today", "Dec 3", etc.
+            const timeStr = formatSimpleDate(conversation.timestamp);
+
+            item.innerHTML = `
+                <div class="search-result-title">${escapeHtml(conversation.title)}</div>
+                <div class="search-result-date">${timeStr}</div>
+            `;
+
+            item.addEventListener('click', () => {
+                loadConversation(conversation.id);
+                closeSearchModal();
+                if (window.innerWidth < 768) {
+                    historySidebar.classList.add('collapsed');
+                }
+            });
+
+            searchResultsList.appendChild(item);
+        });
+    }
+
+    function formatSimpleDate(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (date.toDateString() === now.toDateString()) {
+            return 'Today';
+        }
+        if (diffDays === 1) {
+            return 'Yesterday';
+        }
+        // Return "Dec 3"
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    // ...
+
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            startNewConversation();
+            // On mobile, maybe close sidebar?
+            if (window.innerWidth < 768) {
+                historySidebar.classList.add('collapsed');
+            }
+        });
+    }
     let conversationMessages = [];
 
     // Initialize history display
@@ -529,6 +636,30 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function renameConversation(id, newTitle) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (conversation) {
+            conversation.title = newTitle;
+            saveSearchHistory();
+            renderHistory();
+        }
+    }
+
+    function togglePinConversation(id) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (conversation) {
+            conversation.pinned = !conversation.pinned;
+            // Sort: pinned first, then by timestamp
+            searchHistory.sort((a, b) => {
+                if (a.pinned && !b.pinned) return -1;
+                if (!a.pinned && b.pinned) return 1;
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            saveSearchHistory();
+            renderHistory();
+        }
+    }
+
     function renderHistory() {
         if (searchHistory.length === 0) {
             historyList.innerHTML = '<div class="history-empty">No search history yet</div>';
@@ -545,25 +676,118 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyItem.classList.add('active');
             }
 
+            // Add pinned class if pinned
+            if (conversation.pinned) {
+                historyItem.classList.add('pinned');
+            }
+
             historyItem.innerHTML = `
                 <div class="history-item-content">
                     <div class="history-item-text">${escapeHtml(conversation.title)}</div>
                     <div class="history-item-time">${formatTimestamp(conversation.timestamp)}</div>
                 </div>
-                <button class="delete-history-btn" title="Delete">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
+                <div class="history-menu-wrapper">
+                    <button class="history-menu-btn" title="Options">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2"/>
+                            <circle cx="12" cy="12" r="2"/>
+                            <circle cx="12" cy="19" r="2"/>
+                        </svg>
+                    </button>
+                    <div class="history-dropdown hidden">
+                        <button class="dropdown-item share-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                            </svg>
+                            Share conversation
+                        </button>
+                        <button class="dropdown-item pin-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="17" x2="12" y2="22"/>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                            </svg>
+                            ${conversation.pinned ? 'Unpin' : 'Pin'}
+                        </button>
+                        <button class="dropdown-item rename-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            Rename
+                        </button>
+                        <button class="dropdown-item delete-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
             `;
 
-            historyItem.addEventListener('click', () => {
+            // Click on item to load conversation
+            historyItem.querySelector('.history-item-content').addEventListener('click', () => {
                 loadConversation(conversation.id);
             });
 
-            // Add delete handler
-            const deleteBtn = historyItem.querySelector('.delete-history-btn');
-            deleteBtn.addEventListener('click', (e) => deleteConversation(conversation.id, e));
+            // 3-dot menu toggle
+            const menuBtn = historyItem.querySelector('.history-menu-btn');
+            const dropdown = historyItem.querySelector('.history-dropdown');
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Close all other dropdowns first
+                document.querySelectorAll('.history-dropdown').forEach(d => d.classList.add('hidden'));
+
+                // Position dropdown relative to button
+                const rect = menuBtn.getBoundingClientRect();
+                dropdown.style.top = `${rect.bottom + 4}px`;
+                dropdown.style.left = `${rect.left - 150}px`; // Offset to align right edge
+
+                dropdown.classList.toggle('hidden');
+            });
+
+            // Share button
+            historyItem.querySelector('.share-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                const shareText = `Check out my conversation: ${conversation.title}`;
+                if (navigator.share) {
+                    navigator.share({ title: conversation.title, text: shareText });
+                } else {
+                    navigator.clipboard.writeText(shareText);
+                    showToast('Copied to clipboard!');
+                }
+            });
+
+            // Pin button
+            historyItem.querySelector('.pin-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                togglePinConversation(conversation.id);
+            });
+
+            // Rename button
+            historyItem.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                showInputModal('Rename Conversation', 'Enter new title', conversation.title, (newTitle) => {
+                    renameConversation(conversation.id, newTitle);
+                });
+            });
+
+            // Delete button
+            historyItem.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                deleteConversation(conversation.id, e);
+            });
 
             historyList.appendChild(historyItem);
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.history-dropdown').forEach(d => d.classList.add('hidden'));
         });
     }
 
@@ -634,6 +858,80 @@ document.addEventListener('DOMContentLoaded', () => {
         // Better implementation to avoid listener buildup:
         confirmBtn.onclick = handleConfirm;
         cancelBtn.onclick = handleCancel;
+    }
+
+    function showInputModal(title, placeholder, defaultValue, onConfirm) {
+        const modal = document.getElementById('input-modal');
+        const modalTitle = document.getElementById('input-modal-title');
+        const inputField = document.getElementById('input-modal-field');
+        const confirmBtn = document.getElementById('input-modal-confirm');
+        const cancelBtn = document.getElementById('input-modal-cancel');
+
+        if (!modal) return;
+
+        modalTitle.textContent = title;
+        inputField.placeholder = placeholder;
+        inputField.value = defaultValue || '';
+
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            modal.classList.add('active');
+            inputField.focus();
+            inputField.select();
+        });
+
+        const closeModal = () => {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        };
+
+        const handleConfirm = () => {
+            const value = inputField.value.trim();
+            if (value) {
+                onConfirm(value);
+            }
+            closeModal();
+        };
+
+        const handleCancel = () => {
+            closeModal();
+        };
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Enter') {
+                handleConfirm();
+            } else if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+
+        confirmBtn.onclick = handleConfirm;
+        cancelBtn.onclick = handleCancel;
+        inputField.onkeydown = handleKeydown;
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById('toast-notification');
+        const toastMessage = document.getElementById('toast-message');
+
+        if (!toast) return;
+
+        toastMessage.textContent = message;
+        toast.classList.remove('hidden');
+
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
+        });
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 300);
+        }, 3000);
     }
 
     function escapeHtml(text) {
