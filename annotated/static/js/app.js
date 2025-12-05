@@ -10,65 +10,247 @@ document.addEventListener('DOMContentLoaded', () => {
     const historySidebar = document.getElementById('history-sidebar');
     const historyList = document.getElementById('history-list');
     const clearHistoryBtn = document.getElementById('clear-history');
+    const newChatBtn = document.getElementById('new-chat-btn'); // New Chat Button
+
+    // Search Modal Elements
+    const searchBtn = document.getElementById('search-btn');
+    const searchModal = document.getElementById('search-modal');
+    const modalSearchInput = document.getElementById('modal-search-input');
+    const searchResultsList = document.getElementById('search-results-list');
 
     let isProcessing = false;
     let searchHistory = loadSearchHistory();
     let currentConversationId = null;
+
+    // Search Modal Logic
+    if (searchBtn && searchModal) {
+        searchBtn.addEventListener('click', () => {
+            openSearchModal();
+        });
+
+        // Close on outside click
+        searchModal.addEventListener('click', (e) => {
+            if (e.target === searchModal) {
+                closeSearchModal();
+            }
+        });
+
+        // Search filtering
+        modalSearchInput.addEventListener('input', (e) => {
+            renderSearchResults(e.target.value);
+        });
+    }
+
+    function openSearchModal() {
+        if (!searchModal) return;
+        searchModal.classList.remove('hidden');
+        requestAnimationFrame(() => searchModal.classList.add('active'));
+
+        modalSearchInput.value = '';
+        modalSearchInput.focus();
+        renderSearchResults(); // Show all initially
+    }
+
+    function closeSearchModal() {
+        if (!searchModal) return;
+        searchModal.classList.remove('active');
+        setTimeout(() => searchModal.classList.add('hidden'), 200);
+    }
+
+    function renderSearchResults(query = '') {
+        if (!searchResultsList) return;
+        searchResultsList.innerHTML = '';
+
+        const filteredHistory = searchHistory.filter(c =>
+            c.title.toLowerCase().includes(query.toLowerCase())
+        );
+
+        if (filteredHistory.length === 0) {
+            searchResultsList.innerHTML = '<div style="padding: 1rem; color: #888;">No results found</div>';
+            return;
+        }
+
+        filteredHistory.forEach(conversation => {
+            const item = document.createElement('div');
+            item.className = 'search-result-item';
+
+            // Format time similarly to image "Today", "Dec 3", etc.
+            const timeStr = formatSimpleDate(conversation.timestamp);
+
+            item.innerHTML = `
+                <div class="search-result-title">${escapeHtml(conversation.title)}</div>
+                <div class="search-result-date">${timeStr}</div>
+            `;
+
+            item.addEventListener('click', () => {
+                loadConversation(conversation.id);
+                closeSearchModal();
+                if (window.innerWidth < 768) {
+                    historySidebar.classList.add('collapsed');
+                }
+            });
+
+            searchResultsList.appendChild(item);
+        });
+    }
+
+    function formatSimpleDate(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (date.toDateString() === now.toDateString()) {
+            return 'Today';
+        }
+        if (diffDays === 1) {
+            return 'Yesterday';
+        }
+        // Return "Dec 3"
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    // ...
+
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            startNewConversation();
+            // On mobile, maybe close sidebar?
+            if (window.innerWidth < 768) {
+                historySidebar.classList.add('collapsed');
+            }
+        });
+    }
     let conversationMessages = [];
 
     // Initialize history display
     renderHistory();
 
+    const fileInput = document.getElementById('file-input');
+    // const attachBtn = document.querySelector('.attach-btn'); // Removed
+    let selectedFile = null;
+
     // Toggle history sidebar
     historyToggle.addEventListener('click', () => {
         historySidebar.classList.toggle('collapsed');
-        const chevron = historyToggle.querySelector('.chevron-icon');
-        if (historySidebar.classList.contains('collapsed')) {
-            chevron.style.transform = 'rotate(180deg)';
-        } else {
-            chevron.style.transform = 'rotate(0deg)';
+    });
+
+    const menuBtn = document.getElementById('attach-menu-btn');
+    const menu = document.getElementById('attachment-menu');
+
+    // Toggle Menu
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menu.classList.toggle('active');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !menuBtn.contains(e.target)) {
+            menu.classList.remove('active');
+        }
+    });
+
+    // Handle File Selection (Label triggers input, but we also want to close menu)
+    fileInput.addEventListener('click', () => {
+        menu.classList.remove('active');
+    });
+
+    // Extracted logic for UI Update
+    function updateFilePill(file) {
+        let existingPill = document.querySelector('.file-pill');
+        if (existingPill) existingPill.remove();
+
+        const pill = document.createElement('div');
+        pill.className = 'file-pill';
+        pill.innerHTML = `
+            <span class="file-name">${file.name}</span>
+            <button type="button" class="remove-file">×</button>
+        `;
+
+        chatForm.insertBefore(pill, userInput);
+
+        pill.querySelector('.remove-file').addEventListener('click', () => {
+            selectedFile = null;
+            if (fileInput) fileInput.value = '';
+            pill.remove();
+        });
+
+        userInput.focus();
+    }
+
+    // File Selection
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            selectedFile = e.target.files[0];
+            updateFilePill(selectedFile);
         }
     });
 
     // Clear history
+    // Clear history
     clearHistoryBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to clear all search history?')) {
-            searchHistory = [];
-            saveSearchHistory();
-            renderHistory();
+        showConfirmModal(
+            'Clear History',
+            'Are you sure you want to clear all search history?',
+            () => {
+                searchHistory = [];
+                saveSearchHistory();
+                renderHistory();
 
-            // Also clear all chat messages and start new conversation
-            startNewConversation();
-        }
+                // Also clear all chat messages and start new conversation
+                startNewConversation();
+            }
+        );
     });
 
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const message = userInput.value.trim();
-        if (!message || isProcessing) return;
+        let message = userInput.value.trim();
+
+        let fileToSend = null;
+
+        // Handle attachment text & preparation
+        if (selectedFile) {
+            fileToSend = selectedFile; // Capture file before resetting
+
+            // Reset UI file input state
+            selectedFile = null;
+            fileInput.value = '';
+            const pill = document.querySelector('.file-pill');
+            if (pill) pill.remove();
+        }
+
+        if ((!message && !fileToSend) || isProcessing) return;
+
+        // Switch UI to active conversation mode
+        chatContainer.classList.add('has-messages');
 
         // If starting a new conversation, create a history entry
         if (currentConversationId === null) {
             currentConversationId = Date.now().toString();
-            // We'll add it to history after we get a response or immediately?
-            // Let's add immediately to track it.
             addConversationToHistory(message);
         }
 
         // Add User Message
         appendMessage('user', message);
-        saveCurrentConversation(); // Save state
+        saveCurrentConversation();
 
         userInput.value = '';
         setProcessing(true);
 
         try {
+            // Prepare FormData for multipart upload
+            const formData = new FormData();
+            formData.append('message', message);
+            if (fileToSend) {
+                formData.append('file', fileToSend);
+            }
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message })
+                // Content-Type is set automatically by browser for FormData with boundary
+                body: formData
             });
 
             const reader = response.body.getReader();
@@ -272,7 +454,14 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingDiv.id = 'thinking-indicator';
             thinkingDiv.innerHTML = `
                 <div class="message-content">
-                    <span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+                    <div class="thinking-wrapper">
+                        <span class="thinking-text">Thinking</span>
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
                 </div>
             `;
             chatContainer.appendChild(thinkingDiv);
@@ -342,6 +531,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function startNewConversation() {
         // Clear current conversation
         chatContainer.innerHTML = '';
+        chatContainer.classList.remove('has-messages');
+        // Restore welcome message if it was hidden via innerHTML clearing? 
+        // Wait, clearing innerHTML remvoes the welcome message div itself!
+        // I need to NOT clear the welcome message if I want it back, OR re-inject it.
+        // Actually, the welcome message is STATIC in HTML.
+        // If I do chatContainer.innerHTML = '', I delete the static welcome message.
+        // I should probably Restore it.
+
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="hero-text">
+                    <span class="gradient-text">Hello, Traveler</span>
+                </div>
+                <p class="subtitle">How can I help you explore the world today?</p>
+            </div>
+        `;
         currentConversationId = null;
         conversationMessages = [];
         userInput.value = '';
@@ -359,7 +564,19 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationMessages = conversation.messages || [];
 
         // Clear and rebuild chat
-        chatContainer.innerHTML = '';
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="hero-text">
+                    <span class="gradient-text">Hello, Traveler</span>
+                </div>
+                <p class="subtitle">How can I help you explore the world today?</p>
+            </div>
+        `;
+        if (conversationMessages.length > 0) {
+            chatContainer.classList.add('has-messages');
+        } else {
+            chatContainer.classList.remove('has-messages');
+        }
 
         // Replay messages
         conversationMessages.forEach(msg => {
@@ -403,14 +620,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function deleteConversation(id, event) {
         event.stopPropagation(); // Prevent clicking the item
-        if (confirm('Delete this conversation?')) {
-            searchHistory = searchHistory.filter(c => c.id !== id);
+
+        showConfirmModal(
+            'Delete Conversation',
+            'Are you sure you want to delete this conversation?',
+            () => {
+                searchHistory = searchHistory.filter(c => c.id !== id);
+                saveSearchHistory();
+                renderHistory();
+
+                if (currentConversationId === id) {
+                    startNewConversation();
+                }
+            }
+        );
+    }
+
+    function renameConversation(id, newTitle) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (conversation) {
+            conversation.title = newTitle;
             saveSearchHistory();
             renderHistory();
+        }
+    }
 
-            if (currentConversationId === id) {
-                startNewConversation();
-            }
+    function togglePinConversation(id) {
+        const conversation = searchHistory.find(c => c.id === id);
+        if (conversation) {
+            conversation.pinned = !conversation.pinned;
+            // Sort: pinned first, then by timestamp
+            searchHistory.sort((a, b) => {
+                if (a.pinned && !b.pinned) return -1;
+                if (!a.pinned && b.pinned) return 1;
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            saveSearchHistory();
+            renderHistory();
         }
     }
 
@@ -430,25 +676,118 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyItem.classList.add('active');
             }
 
+            // Add pinned class if pinned
+            if (conversation.pinned) {
+                historyItem.classList.add('pinned');
+            }
+
             historyItem.innerHTML = `
                 <div class="history-item-content">
                     <div class="history-item-text">${escapeHtml(conversation.title)}</div>
                     <div class="history-item-time">${formatTimestamp(conversation.timestamp)}</div>
                 </div>
-                <button class="delete-history-btn" title="Delete">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
+                <div class="history-menu-wrapper">
+                    <button class="history-menu-btn" title="Options">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2"/>
+                            <circle cx="12" cy="12" r="2"/>
+                            <circle cx="12" cy="19" r="2"/>
+                        </svg>
+                    </button>
+                    <div class="history-dropdown hidden">
+                        <button class="dropdown-item share-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                            </svg>
+                            Share conversation
+                        </button>
+                        <button class="dropdown-item pin-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="17" x2="12" y2="22"/>
+                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                            </svg>
+                            ${conversation.pinned ? 'Unpin' : 'Pin'}
+                        </button>
+                        <button class="dropdown-item rename-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            Rename
+                        </button>
+                        <button class="dropdown-item delete-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
             `;
 
-            historyItem.addEventListener('click', () => {
+            // Click on item to load conversation
+            historyItem.querySelector('.history-item-content').addEventListener('click', () => {
                 loadConversation(conversation.id);
             });
 
-            // Add delete handler
-            const deleteBtn = historyItem.querySelector('.delete-history-btn');
-            deleteBtn.addEventListener('click', (e) => deleteConversation(conversation.id, e));
+            // 3-dot menu toggle
+            const menuBtn = historyItem.querySelector('.history-menu-btn');
+            const dropdown = historyItem.querySelector('.history-dropdown');
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Close all other dropdowns first
+                document.querySelectorAll('.history-dropdown').forEach(d => d.classList.add('hidden'));
+
+                // Position dropdown relative to button
+                const rect = menuBtn.getBoundingClientRect();
+                dropdown.style.top = `${rect.bottom + 4}px`;
+                dropdown.style.left = `${rect.left - 150}px`; // Offset to align right edge
+
+                dropdown.classList.toggle('hidden');
+            });
+
+            // Share button
+            historyItem.querySelector('.share-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                const shareText = `Check out my conversation: ${conversation.title}`;
+                if (navigator.share) {
+                    navigator.share({ title: conversation.title, text: shareText });
+                } else {
+                    navigator.clipboard.writeText(shareText);
+                    showToast('Copied to clipboard!');
+                }
+            });
+
+            // Pin button
+            historyItem.querySelector('.pin-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                togglePinConversation(conversation.id);
+            });
+
+            // Rename button
+            historyItem.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                showInputModal('Rename Conversation', 'Enter new title', conversation.title, (newTitle) => {
+                    renameConversation(conversation.id, newTitle);
+                });
+            });
+
+            // Delete button
+            historyItem.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.classList.add('hidden');
+                deleteConversation(conversation.id, e);
+            });
 
             historyList.appendChild(historyItem);
+        });
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.history-dropdown').forEach(d => d.classList.add('hidden'));
         });
     }
 
@@ -466,6 +805,133 @@ document.addEventListener('DOMContentLoaded', () => {
         if (diffDays < 7) return `${diffDays}d ago`;
 
         return date.toLocaleDateString();
+    }
+
+    function showConfirmModal(title, message, onConfirm) {
+        const modal = document.getElementById('confirmation-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+
+        if (!modal) return; // Safety check
+
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        modal.classList.remove('hidden');
+        // Small delay to allow CSS transition
+        requestAnimationFrame(() => {
+            modal.classList.add('active');
+        });
+
+        const cleanup = () => {
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+        };
+
+        const closeModal = () => {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300); // Match CSS transition duration
+            cleanup();
+        };
+
+        const handleConfirm = () => {
+            onConfirm();
+            closeModal();
+        };
+
+        const handleCancel = () => {
+            closeModal();
+        };
+
+        // Ensure we don't stack listeners if function called multiple times?
+        // We use a cleanup function, but we need to make sure we remove PREVIOUS listeners if any exist?
+        // Actually, with the closure, creating new listeners every time is fine IF we cleanup correctly.
+        // But what if user clicks outside? 
+        // Let's keep it simple: Add listeners, remove on close.
+        // To be safe against double-binding if opened rapidly, maybe clone buttons? 
+        // No, simple remove is improved by `once: true` if possible, but we need closure access.
+
+        // Better implementation to avoid listener buildup:
+        confirmBtn.onclick = handleConfirm;
+        cancelBtn.onclick = handleCancel;
+    }
+
+    function showInputModal(title, placeholder, defaultValue, onConfirm) {
+        const modal = document.getElementById('input-modal');
+        const modalTitle = document.getElementById('input-modal-title');
+        const inputField = document.getElementById('input-modal-field');
+        const confirmBtn = document.getElementById('input-modal-confirm');
+        const cancelBtn = document.getElementById('input-modal-cancel');
+
+        if (!modal) return;
+
+        modalTitle.textContent = title;
+        inputField.placeholder = placeholder;
+        inputField.value = defaultValue || '';
+
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            modal.classList.add('active');
+            inputField.focus();
+            inputField.select();
+        });
+
+        const closeModal = () => {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        };
+
+        const handleConfirm = () => {
+            const value = inputField.value.trim();
+            if (value) {
+                onConfirm(value);
+            }
+            closeModal();
+        };
+
+        const handleCancel = () => {
+            closeModal();
+        };
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Enter') {
+                handleConfirm();
+            } else if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+
+        confirmBtn.onclick = handleConfirm;
+        cancelBtn.onclick = handleCancel;
+        inputField.onkeydown = handleKeydown;
+    }
+
+    function showToast(message) {
+        const toast = document.getElementById('toast-notification');
+        const toastMessage = document.getElementById('toast-message');
+
+        if (!toast) return;
+
+        toastMessage.textContent = message;
+        toast.classList.remove('hidden');
+
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
+        });
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 300);
+        }, 3000);
     }
 
     function escapeHtml(text) {

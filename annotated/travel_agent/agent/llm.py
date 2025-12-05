@@ -271,10 +271,23 @@ class GoogleProvider(LLMProvider):
                          )
                      ))
             else:
+                # Handle Files (Images/PDFs)
+                if msg.get("files"):
+                    for file in msg["files"]:
+                        parts.append(genai.protos.Part(
+                            inline_data=genai.protos.Blob(
+                                mime_type=file["mime_type"],
+                                data=file["data"]
+                            )
+                        ))
+
                 text_content = msg.get("content", "")
-                if not text_content:
+                # Ensure at least some content parts exist
+                if not text_content and not parts: 
                     text_content = " "
-                parts.append(genai.protos.Part(text=text_content))
+                
+                if text_content:
+                    parts.append(genai.protos.Part(text=text_content))
                 
             if parts:
                 current_content = genai.protos.Content(role=role, parts=parts)
@@ -306,6 +319,9 @@ class GoogleProvider(LLMProvider):
                 safety_settings=self.safety_settings
             )
         except Exception as e:
+            print(f"CRITICAL GEMINI ERROR: {e}")
+            import traceback
+            traceback.print_exc()
             return {"content": f"I encountered an error generating a response: {str(e)}. Please try again.", "tool_calls": None}
         
         tool_calls = []

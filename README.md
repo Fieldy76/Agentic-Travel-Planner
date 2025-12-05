@@ -135,17 +135,19 @@ The web interface includes:
 - **🔗 Clickable Links**: Flight booking links rendered as clickable elements
 - **🫧 Live Thinking Indicator**: Animated "Thinking..." text with bouncing dots
 - **📱 Adaptive Chat Layout**: Smooth transition from welcome screen to a clean, pill-based conversation view
-- **📎 Seamless File Uploads**: Upload documents (PDFs, images) directly for analysis by the agent.
+- **📎 Multi-Format File Uploads**: Upload documents (PDFs, DOCX, TXT, images) directly for analysis. Text documents are parsed server-side for maximum compatibility.
 - **📜 Collapsible Search History Sidebar**: 
   - Starts collapsed for a cleaner initial view
   - Animated chevron icon rotates on toggle
-  - View and restore full conversation history
-  - Delete individual conversations with trash icon
-  - Click any history item to restore that conversation
+  - **Context Menu (3-dot)**: Share, Pin, Rename, and Delete conversations
+  - **Pin conversations** to keep them at the top of the list
   - Smart timestamps (e.g., "5m ago", "2h ago", "3d ago")
   - Clear all history with confirmation
   - Persistent storage using localStorage (up to 50 conversations)
-- **✨ Custom Confirmation Modals**: Elegant, themed verification steps that replace browser-native popups.
+- **✨ Custom Styled Modals**: 
+  - Elegant confirmation dialogs for destructive actions
+  - Input modals for renaming (replaces browser prompts)
+  - Toast notifications for feedback (replaces browser alerts)
 - **✈️ Flexible Flight Booking**:
   - Accept multiple selection formats (flight codes, numbers, or natural language)
   - Clear confirmation messages with booking reference and details

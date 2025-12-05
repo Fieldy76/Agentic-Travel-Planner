@@ -6,7 +6,7 @@ import asyncio
 from typing import AsyncGenerator
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,8 +113,10 @@ async def startup_event():
         logger.warning("Agent initialization failed. Using Mock Agent for UI testing.")
         
         class MockAgent:
-            async def run_generator(self, user_input, request_id="mock"):
+            async def run_generator(self, user_input, file_data=None, mime_type=None, request_id="mock"):
                 yield {"type": "message", "content": f"I received your message: '{user_input}'. (Mock Agent)"}
+                if file_data:
+                    yield {"type": "message", "content": f"I also received a file: {len(file_data)} bytes."}
                 yield {"type": "tool_call", "name": "mock_tool", "arguments": {"query": "test"}}
                 await asyncio.sleep(1)
                 yield {"type": "tool_result", "name": "mock_tool", "content": "Mock result", "is_error": False}
@@ -126,10 +128,6 @@ async def startup_event():
 @app.get("/")
 async def index():
     return FileResponse('static/index.html')
-
-from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile
-
-# ... (imports)
 
 @app.post("/api/chat")
 async def chat(

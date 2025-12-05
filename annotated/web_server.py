@@ -12,10 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Add project root to path ensuring python can find travel_agent package
+# Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 
 from travel_agent.config import Config
@@ -37,10 +37,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Mount static files to serve HTML/JS/CSS frontend
+# Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Add CORS to allow frontend requests (even if served from same origin, good practice)
+# Add CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,17 +53,12 @@ app.add_middleware(
 agent = None
 
 async def initialize_agent():
-    """
-    Asynchronous Agent Initialization.
-    Handles loading credentials, fallback strategies, and tool registration.
-    """
     global agent
     
     if not Config.validate(): 
         logger.error("Config validation failed.")
         return False
     
-    # Get provider preference (default: Anthropic)
     provider_name = os.getenv("LLM_PROVIDER", "ANTHROPIC").lower()
     api_key = None
     
@@ -76,7 +71,6 @@ async def initialize_agent():
     if provider_name in provider_map and provider_map[provider_name]:
         api_key = provider_map[provider_name]
         
-    # Fallback Strategy: If preferred provider key is missing, search others
     if not api_key:
         logger.warning(
             f"API key for preferred provider ({provider_name.upper()}) is missing. searching fallback..."
@@ -93,14 +87,13 @@ async def initialize_agent():
         return False
 
     try:
-        # Initialize LLM Provider (Async)
+        # LLM Provider is now Async
         llm = get_llm_provider(provider_name, api_key)
     except ImportError as e:
         logger.error(f"Error initializing LLM: {e}")
         return False
 
-    # Initialize MCP Server
-    # This server acts as a bridge between the LLM and the Python functions (tools)
+    # MCP Server (now supports async tools)
     server = MCPServer()
     server.register_tool(search_flights)
     server.register_tool(book_flight)
@@ -109,7 +102,6 @@ async def initialize_agent():
     server.register_tool(process_payment)
     server.register_tool(get_current_datetime)
 
-    # Initialize Orchestrator which manages the thought loop
     agent = AgentOrchestrator(llm, server)
     logger.info(f"Agent initialized successfully with: {provider_name.upper()}")
     return True
@@ -117,7 +109,6 @@ async def initialize_agent():
 @app.on_event("startup")
 async def startup_event():
     success = await initialize_agent()
-    # Mock Agent Fallback for UI testing without API keys
     if not success:
         logger.warning("Agent initialization failed. Using Mock Agent for UI testing.")
         
@@ -125,7 +116,7 @@ async def startup_event():
             async def run_generator(self, user_input, file_data=None, mime_type=None, request_id="mock"):
                 yield {"type": "message", "content": f"I received your message: '{user_input}'. (Mock Agent)"}
                 if file_data:
-                     yield {"type": "message", "content": f"I also received a file: {len(file_data)} bytes."}
+                    yield {"type": "message", "content": f"I also received a file: {len(file_data)} bytes."}
                 yield {"type": "tool_call", "name": "mock_tool", "arguments": {"query": "test"}}
                 await asyncio.sleep(1)
                 yield {"type": "tool_result", "name": "mock_tool", "content": "Mock result", "is_error": False}
@@ -136,7 +127,6 @@ async def startup_event():
 
 @app.get("/")
 async def index():
-    # Serve the main Single Page Application (SPA)
     return FileResponse('static/index.html')
 
 @app.post("/api/chat")
@@ -146,7 +136,7 @@ async def chat(
 ):
     """
     Main Chat Endpoint with File Upload Support.
-    Accepts multipart/form-data requests to handle both text messages and file attachments.
+    Accepts multipart/form-data.
     """
     if not agent:
         raise HTTPException(status_code=500, detail="Agent not initialized")
@@ -154,8 +144,6 @@ async def chat(
     file_data = None
     mime_type = None
     
-    # Handle File Upload
-    # We read the file into memory to pass it to the agent/LLM
     if file:
         content = await file.read()
         file_data = content
@@ -163,12 +151,11 @@ async def chat(
         logger.info(f"Received file: {file.filename} ({mime_type}, {len(content)} bytes)")
 
     # Define an async generator to stream events to the client
-    # Using Server-Sent Events (SSE) / NDJSON pattern for real-time UI updates
+    # This allows the UI to update in real-time as the agent thinks and acts
     async def event_generator() -> AsyncGenerator[str, None]:
-        # Pass user input and optional file data to the orchestrator
+        # Pass file data to run_generator (requires orchestrator update)
         async for event in agent.run_generator(message, file_data=file_data, mime_type=mime_type):
             # We explicitly format as NDJSON (Newline Delimited JSON)
-            # Each line corresponds to a distinct event (thinking, tool call, final answer)
             yield json.dumps(event) + "\n"
 
     # Return a StreamingResponse to keep the connection open
