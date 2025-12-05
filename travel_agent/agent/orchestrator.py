@@ -34,6 +34,7 @@ CRITICAL DATE HANDLING:
 WORKFLOW RULES:
 
 1. FLIGHT SEARCH & SELECTION:
+   - Ask for the departure city (origin) if not specified. NEVER assume the origin.
    - Ask if one-way or round-trip if not specified
    - Search flights and include weather forecast
    - Present options clearly with prices and times
@@ -99,12 +100,18 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
-    async def run_generator(self, user_input: str, request_id: str = "default"):
+    async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """Run one turn of the agent loop, yielding events (Async Generator)."""
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
+        # Construct user message with potential file attachment
+        message_payload = {"role": "user", "content": user_input}
+        if file_data and mime_type:
+            message_payload["files"] = [{"mime_type": mime_type, "data": file_data}]
+            logger.info(f"Processing attachment: {mime_type} ({len(file_data)} bytes)")
+        
         # Add user message to memory
-        self.memory.add_message({"role": "user", "content": user_input})
+        self.memory.add_message(message_payload)
         
         # Main Loop - Increased to 10 to handle multi-step flows like booking
         max_turns = 10

@@ -586,3 +586,97 @@ body {
     background: #c4c7c5;
     border-radius: 4px;
 }
+
+/* Confirmation Modal - Material Design 3 / Gemini Style */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.32);
+    /* Standard scrim opacity */
+    backdrop-filter: blur(2px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s step-end;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s step-start;
+}
+
+.modal-content {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 28px;
+    width: 90%;
+    max-width: 312px;
+    /* Standard MD3 standard dialog width */
+    box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
+    transform: scale(0.95);
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+    text-align: left;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: var(--text-main);
+    font-size: 1.5rem;
+    font-weight: 400;
+}
+
+.modal-content p {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    line-height: 1.5;
+    font-size: 1rem;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.modal-actions button {
+    padding: 10px 24px;
+    border-radius: 20px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: none;
+    font-size: 0.9rem;
+}
+
+.btn-secondary {
+    background: transparent;
+    color: #0b57d0;
+    /* Google Blue */
+}
+
+.btn-secondary:hover {
+    background: rgba(11, 87, 208, 0.08);
+}
+
+.btn-danger {
+    background: #b3261e;
+    /* Material Error Red */
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #8c1d18;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}

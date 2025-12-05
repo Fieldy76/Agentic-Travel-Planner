@@ -109,7 +109,7 @@ async def _search_real_flights(origin: str, destination: str, date: str) -> List
         
         results.append({
             "flight_id": offer.get("id"),
-            "airline": airline_name,
+            "airline": f"{airline_name} ({carrier_code})",
             "airline_code": carrier_code,
             "flight_number": f"{carrier_code}{segment.get('number', '000')}",
             "origin": origin.upper(),
@@ -171,7 +171,7 @@ async def _search_mock_flights(origin: str, destination: str, date: str) -> List
             
             results.append({
                 "flight_id": flight_num,
-                "airline": airline_name,
+                "airline": f"{airline_name} ({code})",
                 "airline_code": code,
                 "origin": origin,
                 "destination": destination,
@@ -193,7 +193,7 @@ async def _search_mock_flights(origin: str, destination: str, date: str) -> List
         
         results.append({
             "flight_id": flight_num,
-            "airline": airline_name,
+            "airline": f"{airline_name} ({code})",
             "airline_code": code,
             "origin": origin,
             "destination": destination,

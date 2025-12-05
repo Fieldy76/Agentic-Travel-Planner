@@ -81,32 +81,40 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Clear history
+    // Clear history
     clearHistoryBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to clear all search history?')) {
-            searchHistory = [];
-            saveSearchHistory();
-            renderHistory();
+        showConfirmModal(
+            'Clear History',
+            'Are you sure you want to clear all search history?',
+            () => {
+                searchHistory = [];
+                saveSearchHistory();
+                renderHistory();
 
-            // Also clear all chat messages and start new conversation
-            startNewConversation();
-        }
+                // Also clear all chat messages and start new conversation
+                startNewConversation();
+            }
+        );
     });
 
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         let message = userInput.value.trim();
 
-        // Handle attachment text
+        let fileToSend = null;
+
+        // Handle attachment text & preparation
         if (selectedFile) {
-            message = `[Attached: ${selectedFile.name}] ${message}`.trim();
-            // Reset file input
+            fileToSend = selectedFile; // Capture file before resetting
+
+            // Reset UI file input state
             selectedFile = null;
             fileInput.value = '';
             const pill = document.querySelector('.file-pill');
             if (pill) pill.remove();
         }
 
-        if (!message || isProcessing) return;
+        if ((!message && !fileToSend) || isProcessing) return;
 
         // Switch UI to active conversation mode
         chatContainer.classList.add('has-messages');
@@ -114,25 +122,28 @@ document.addEventListener('DOMContentLoaded', () => {
         // If starting a new conversation, create a history entry
         if (currentConversationId === null) {
             currentConversationId = Date.now().toString();
-            // We'll add it to history after we get a response or immediately?
-            // Let's add immediately to track it.
             addConversationToHistory(message);
         }
 
         // Add User Message
         appendMessage('user', message);
-        saveCurrentConversation(); // Save state
+        saveCurrentConversation();
 
         userInput.value = '';
         setProcessing(true);
 
         try {
+            // Prepare FormData for multipart upload
+            const formData = new FormData();
+            formData.append('message', message);
+            if (fileToSend) {
+                formData.append('file', fileToSend);
+            }
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message })
+                // Content-Type is set automatically by browser for FormData with boundary
+                body: formData
             });
 
             const reader = response.body.getReader();
@@ -502,15 +513,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function deleteConversation(id, event) {
         event.stopPropagation(); // Prevent clicking the item
-        if (confirm('Delete this conversation?')) {
-            searchHistory = searchHistory.filter(c => c.id !== id);
-            saveSearchHistory();
-            renderHistory();
 
-            if (currentConversationId === id) {
-                startNewConversation();
+        showConfirmModal(
+            'Delete Conversation',
+            'Are you sure you want to delete this conversation?',
+            () => {
+                searchHistory = searchHistory.filter(c => c.id !== id);
+                saveSearchHistory();
+                renderHistory();
+
+                if (currentConversationId === id) {
+                    startNewConversation();
+                }
             }
-        }
+        );
     }
 
     function renderHistory() {
@@ -565,6 +581,59 @@ document.addEventListener('DOMContentLoaded', () => {
         if (diffDays < 7) return `${diffDays}d ago`;
 
         return date.toLocaleDateString();
+    }
+
+    function showConfirmModal(title, message, onConfirm) {
+        const modal = document.getElementById('confirmation-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+
+        if (!modal) return; // Safety check
+
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        modal.classList.remove('hidden');
+        // Small delay to allow CSS transition
+        requestAnimationFrame(() => {
+            modal.classList.add('active');
+        });
+
+        const cleanup = () => {
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+        };
+
+        const closeModal = () => {
+            modal.classList.remove('active');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300); // Match CSS transition duration
+            cleanup();
+        };
+
+        const handleConfirm = () => {
+            onConfirm();
+            closeModal();
+        };
+
+        const handleCancel = () => {
+            closeModal();
+        };
+
+        // Ensure we don't stack listeners if function called multiple times?
+        // We use a cleanup function, but we need to make sure we remove PREVIOUS listeners if any exist?
+        // Actually, with the closure, creating new listeners every time is fine IF we cleanup correctly.
+        // But what if user clicks outside? 
+        // Let's keep it simple: Add listeners, remove on close.
+        // To be safe against double-binding if opened rapidly, maybe clone buttons? 
+        // No, simple remove is improved by `once: true` if possible, but we need closure access.
+
+        // Better implementation to avoid listener buildup:
+        confirmBtn.onclick = handleConfirm;
+        cancelBtn.onclick = handleCancel;
     }
 
     function escapeHtml(text) {

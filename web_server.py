@@ -127,27 +127,40 @@ async def startup_event():
 async def index():
     return FileResponse('static/index.html')
 
+from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile
+
+# ... (imports)
+
 @app.post("/api/chat")
-async def chat(request: Request):
+async def chat(
+    message: str = Form(...),
+    file: UploadFile = File(None)
+):
+    """
+    Main Chat Endpoint with File Upload Support.
+    Accepts multipart/form-data.
+    """
     if not agent:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
-    try:
-        data = await request.json()
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-        
-    user_input = data.get('message')
+    file_data = None
+    mime_type = None
     
-    if not user_input:
-        raise HTTPException(status_code=400, detail="No message provided")
+    if file:
+        content = await file.read()
+        file_data = content
+        mime_type = file.content_type
+        logger.info(f"Received file: {file.filename} ({mime_type}, {len(content)} bytes)")
 
+    # Define an async generator to stream events to the client
+    # This allows the UI to update in real-time as the agent thinks and acts
     async def event_generator() -> AsyncGenerator[str, None]:
-        async for event in agent.run_generator(user_input):
-            # Format as Server-Sent Event (SSE) or just NDJSON
-            # The current frontend expects NDJSON (json line by line)
+        # Pass file data to run_generator (requires orchestrator update)
+        async for event in agent.run_generator(message, file_data=file_data, mime_type=mime_type):
+            # We explicitly format as NDJSON (Newline Delimited JSON)
             yield json.dumps(event) + "\n"
 
+    # Return a StreamingResponse to keep the connection open
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 if __name__ == "__main__":
