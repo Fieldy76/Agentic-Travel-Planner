@@ -15,6 +15,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     - ✈️ **Flight Search & Booking**: Real-time flight search (Amadeus API) with round-trip support.
         - **Smart Round-Trip Workflow**: Automatically searches for return flights after outbound selection.
         - **🔍 Proactive Date Flexibility**: When no flights are found, automatically searches ±1-2 days and presents all options.
+        - **🧠 Smart Date Inference**: Intelligently infers years for dates like "Jan 30" based on "today", handling typos and relative dates without nagging.
         - **✅ Flight Selection Validation**: Prevents hallucinated flight codes - only uses flights from actual search results.
         - **👥 Multi-Passenger Pricing**: Automatically calculates total price × number of passengers.
         - **📋 Passenger Details Confirmation**: Confirms name-passport pairings before booking to avoid mix-ups.
@@ -132,7 +133,9 @@ The web interface includes:
   - Radial gradient background overlays
   - Enhanced depth with modern shadows
 - **🔗 Clickable Links**: Flight booking links rendered as clickable elements
-- **⏳ Thinking Indicator**: Animated "Thinking..." bubble shows agent activity
+- **🫧 Live Thinking Indicator**: Animated "Thinking..." text with bouncing dots
+- **📱 Adaptive Chat Layout**: Smooth transition from welcome screen to a clean, pill-based conversation view
+- **📎 Simplified Attachments**: Clean file upload menu for sharing documents
 - **📜 Collapsible Search History Sidebar**: 
   - Starts collapsed for a cleaner initial view
   - Animated chevron icon rotates on toggle

@@ -8,15 +8,27 @@ from ..mcp.mcp_server import MCPServer
 from .memory import AgentMemory, InMemoryMemory
 from ..config import setup_logging
 
-# Ensure logging is configured
+# Ensure logging is configured when this module is imported
 setup_logging()
 logger = logging.getLogger(__name__)
 
 class AgentOrchestrator:
+    """
+    The Agent Orchestrator manages the core loop of the agent's cognition:
+    1. Receive user input
+    2. Consult LLM with context and tools
+    3. Execute tools if requested
+    4. Feed results back to LLM
+    5. Repeat until a final text response is generated
+    """
     def __init__(self, llm: LLMProvider, server: MCPServer, memory: Optional[AgentMemory] = None):
         self.llm = llm
         self.server = server
         self.memory = memory or InMemoryMemory()
+        
+        # The System Prompt defines the Agent's personality and core rules.
+        # It's crucial for instructing the LLM on how to behave, especially for
+        # complex tasks like handling dates, multiple languages, and booking workflows.
         self.system_prompt = """You are a helpful travel assistant. Guide users through booking trips step-by-step.
 
 LANGUAGE:
@@ -100,40 +112,53 @@ WORKFLOW RULES:
 Be brief and efficient."""
 
     async def run_generator(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop, yielding events (Async Generator)."""
+        """
+        Run one turn of the agent loop, yielding events (Async Generator).
+        This method is designed to be streamed to the client (Server-Sent Events).
+        """
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
-        # Add user message to memory
+        # Add the new user message to conversation memory
         self.memory.add_message({"role": "user", "content": user_input})
         
-        # Main Loop - Increased to 10 to handle multi-step flows like booking
+        # Limit the number of turns (thought/action cycles) to prevent infinite loops.
+        # We increased this to 10 to support complex multi-step flows like booking + payment.
         max_turns = 10
         current_turn = 0
         
         while current_turn < max_turns:
             current_turn += 1
             
-            # 1. Get available tools
+            # 1. Get available tools from the MCP Server
+            # The agent dynamically sees what tools are available (e.g., search_flights, rent_car)
             tools = self.server.list_tools()
             
-            # 2. Call LLM with current date/time context
+            # 2. Prepare the context for the LLM
             logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
             
+            # Inject dynamic time context into the system prompt.
+            # This is critical for the LLM to understand what "tomorrow" or "Jan 30" implies relative to today.
             now = datetime.now()
             current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
             current_date = now.strftime("%Y-%m-%d")
             
+            # Enhanced System Prompt with specific date inference rules to fix recent issues with year nagging.
             enhanced_system_prompt = f"""{self.system_prompt}
 
-IMPORTANT CONTEXT:
-- Current date and time: {current_datetime}
-- Today's date: {current_date}
-- When users ask about "today", "now", or relative dates, use this information.
+CRITICAL DATE CONTEXT:
+- TODAY'S DATE: {current_date} ({now.strftime('%A')})
+- If the user provides a date without a year (e.g., "Jan 30", "8 feb"), you MUST assume the NEXT occurrence of that date relative to today.
+  * Example: If today is 2025-12-05 and user says "Jan 30", interpret as 2026-01-30.
+  * Example: If today is 2025-01-01 and user says "Mar 5", interpret as 2025-03-05.
+- Handle month abbreviations and typos intelligently (e.g., "fab" -> "feb", "sept" -> "sep").
+- DO NOT ask for the year if it can be inferred from the rules above.
 """
             
-            # Construct full history with enhanced system prompt
+            # Construct full message history for the LLM call
             messages = [{"role": "system", "content": enhanced_system_prompt}] + self.memory.get_messages()
-            # 2. Get LLM Response with Retry Logic
+            
+            # 3. Call The LLM (with Retry Logic)
+            # We wrap the LLM call in a retry loop to handle transient API errors or rate limits.
             response = None
             max_llm_retries = 3
             
@@ -145,17 +170,18 @@ IMPORTANT CONTEXT:
                     logger.warning(f"LLM call failed (attempt {attempt+1}/{max_llm_retries}): {e}", extra={"request_id": request_id})
                     if attempt == max_llm_retries - 1:
                         logger.error(f"LLM error after {max_llm_retries} attempts: {e}")
+                        # Yield an error event if all retries fail
                         yield {"type": "error", "content": f"I'm having trouble connecting to my brain right now. Error: {str(e)}"}
                         return # Stop generator
-                    await asyncio.sleep(1) # Wait before retry (async sleep)
+                    await asyncio.sleep(1) # Wait before retry (non-blocking sleep)
             
             if not response:
                 break
 
-            
             content = response.get("content")
             tool_calls = response.get("tool_calls")
             
+            # 4. Handle LLM Response
             # Add assistant message to memory if there is content OR tool calls
             if content or tool_calls:
                 # Log content if present
@@ -168,7 +194,7 @@ IMPORTANT CONTEXT:
                     "tool_calls": tool_calls
                 })
                 
-                # Only yield message event if there is actual text content
+                # Only yield message event if there is actual text content to display to the user
                 if content:
                     yield {"type": "message", "content": content}
                 
@@ -177,16 +203,17 @@ IMPORTANT CONTEXT:
                 logger.info("No tool calls, turn complete", extra={"request_id": request_id})
                 break
                 
-            # 3. Execute Tools
+            # 5. Execute Tools (if any)
             for tool_call in tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["arguments"]
                 tool_id = tool_call["id"]
                 
                 logger.info(f"Executing tool: {tool_name}", extra={"request_id": request_id, "tool_args": tool_args})
+                # Yield a tool_call event so the UI can show "Checking flights..." capabilities
                 yield {"type": "tool_call", "name": tool_name, "arguments": tool_args}
                 
-                # Retry logic
+                # Retry logic for Tool Execution
                 max_retries = 3
                 result_text = ""
                 is_error = False
@@ -203,12 +230,12 @@ IMPORTANT CONTEXT:
                             result_text = f"Error executing tool {tool_name}: {str(e)}"
                             is_error = True
                         else:
-                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff (async)
+                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff
                 
                 logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
                 yield {"type": "tool_result", "name": tool_name, "content": result_text, "is_error": is_error}
                 
-                # Append standard tool result message
+                # Append the tool result to memory so the LLM knows what happened
                 self.memory.add_message({
                     "role": "tool",
                     "tool_call_id": tool_id,
@@ -217,7 +244,10 @@ IMPORTANT CONTEXT:
                 })
 
     async def run(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop (async wrapper for CIL/Testing)."""
+        """
+        Run one turn of the agent loop (async wrapper for CLI/Testing).
+        This consumes the generator and prints events to stdout.
+        """
         async for event in self.run_generator(user_input, request_id):
             if event["type"] == "message":
                 print(f"Agent: {event['content']}")
