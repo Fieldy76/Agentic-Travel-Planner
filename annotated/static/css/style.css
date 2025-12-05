@@ -1,21 +1,74 @@
+/**
+ * ================================================================================
+ * AGENTIC TRAVEL PLANNER - Main Stylesheet
+ * ================================================================================
+ * 
+ * This stylesheet provides all styling for the Agentic Travel Planner web app.
+ * It follows Material Design 3 (MD3) guidelines with a Gemini-inspired color palette.
+ * 
+ * Design System Overview:
+ * ──────────────────────
+ * - Color scheme: Light mode with blue accent (Google colors)
+ * - Typography: Inter font family (Google Fonts)
+ * - Border radius: Pill shapes for buttons, rounded corners for containers
+ * - Shadows: Subtle elevation for modals and dropdowns
+ * 
+ * CSS Architecture:
+ * ─────────────────
+ * 1. CSS Variables (Design Tokens)
+ * 2. Reset & Base Styles
+ * 3. Layout Components (Header, Sidebar, Content)
+ * 4. Chat Components (Messages, Tools)
+ * 5. Input & Forms
+ * 6. Modals & Overlays
+ * 7. Animations & Transitions
+ * 8. Responsive Breakpoints
+ * 
+ * Key Color Palette:
+ * ─────────────────
+ * --bg-body:     #ffffff  (White background)
+ * --bg-sidebar:  #f0f4f9  (Light gray sidebar)
+ * --bg-active:   #d3e3fd  (Light blue for active items)
+ * --text-main:   #1f1f1f  (Near-black text)
+ * --primary:     #0b57d0  (Google Blue for buttons)
+ * 
+ * Author: Agentic Travel Planner Team
+ * ================================================================================
+ */
+
+/* =============================================================================
+   1. CSS VARIABLES (DESIGN TOKENS)
+   ============================================================================= */
+
 :root {
-    /* Gemini Palette */
+    /* -------------------------------------------------------------------------
+       Color Palette - Gemini/Google Inspired
+       ------------------------------------------------------------------------- */
     --bg-body: #ffffff;
+    /* Main background */
     --bg-sidebar: #f0f4f9;
+    /* Sidebar background */
     --bg-hover: #e3e3e3;
+    /* Hover state background */
     --bg-active: #d3e3fd;
-    /* Light Blue for active items */
+    /* Active/selected item (light blue) */
     --text-active: #041e49;
-    /* Gradients */
+    /* Active item text color */
+
+    /* Gradient for hero text - Multi-color Gemini style */
     --primary-gradient: linear-gradient(74deg, #4285f4 0, #9b72cb 9%, #d96570 20%, #d96570 24%, #9b72cb 35%, #4285f4 44%, #9b72cb 50%, #d96570 56%, #1e1f20 75%, #1e1f20 100%);
 
+    /* Text Colors */
     --text-main: #1f1f1f;
+    /* Primary text */
     --text-secondary: #444746;
+    /* Secondary/muted text */
 
-    /* Input Area */
+    /* Input Styling */
     --input-bg: #f0f4f9;
+    /* Input field background */
 
-    /* Font */
+    /* Typography */
     --font-family: 'Inter', Roboto, sans-serif;
 
     /* Shadows */
@@ -23,12 +76,18 @@
     --shadow-focus: 0 0 0 2px rgba(66, 133, 244, 0.2);
 }
 
+/* =============================================================================
+   2. RESET & BASE STYLES
+   ============================================================================= */
+
+/* Box-sizing reset for consistent sizing */
 * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }
 
+/* Body: Full viewport, no scroll, flex layout */
 body {
     font-family: var(--font-family);
     background: var(--bg-body);
@@ -36,17 +95,28 @@ body {
     height: 100vh;
     display: flex;
     overflow: hidden;
+    /* Prevent body scrolling */
 }
 
+/* =============================================================================
+   3. LAYOUT STRUCTURE
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   3.1 App Container
+   Main wrapper - column layout (header on top, content below)
+   ----------------------------------------------------------------------------- */
 .app-container {
     display: flex;
     flex-direction: column;
-    /* Main container is column (Header + content) */
     width: 100%;
     height: 100%;
 }
 
-/* Sidebar - Left Side */
+/* -----------------------------------------------------------------------------
+   3.2 History Sidebar
+   Collapsible left panel for conversation history
+   ----------------------------------------------------------------------------- */
 .history-sidebar {
     width: 280px;
     background: var(--bg-sidebar);
@@ -58,15 +128,16 @@ body {
     z-index: 100;
     overflow: hidden;
     white-space: nowrap;
-    /* Prevent text wrapping during collapse */
+    /* Prevent text wrapping during animation */
 }
 
+/* Collapsed state - slides width to 0 */
 .history-sidebar.collapsed {
     width: 0;
     padding: 1rem 0;
-    /* Remove horizontal padding but keep vertical for smoothness */
 }
 
+/* Sidebar header with "Recent" title and clear button */
 .history-header {
     display: flex;
     align-items: center;
@@ -81,7 +152,9 @@ body {
     font-weight: 500;
 }
 
-/* Sidebar Toggle Icon (Hamburger) */
+/* -----------------------------------------------------------------------------
+   3.3 Sidebar Toggle (Hamburger Menu)
+   ----------------------------------------------------------------------------- */
 .history-toggle {
     background: transparent;
     border: none;
@@ -97,14 +170,18 @@ body {
 
 .history-toggle:hover {
     background: rgba(31, 31, 31, 0.08);
-    /* Hover effect like Gemini */
 }
 
+/* -----------------------------------------------------------------------------
+   3.4 History List
+   Scrollable container for conversation items
+   ----------------------------------------------------------------------------- */
 .history-list {
     flex: 1;
     overflow-y: auto;
 }
 
+/* Individual history item - pill shape */
 .history-item {
     display: flex;
     align-items: center;
@@ -112,7 +189,7 @@ body {
     padding: 0.75rem 1rem;
     margin-bottom: 0.25rem;
     border-radius: 100px;
-    /* Pill shape */
+    /* Full pill shape */
     cursor: pointer;
     color: var(--text-main);
     font-size: 0.9rem;
@@ -123,15 +200,18 @@ body {
     background: var(--bg-hover);
 }
 
+/* Active state - light blue highlight */
 .history-item.active {
     background: var(--bg-active);
     color: var(--text-active);
     font-weight: 500;
 }
 
+/* Text container */
 .history-item-content {
     flex: 1;
     min-width: 0;
+    /* Enable text truncation */
 }
 
 .history-item-text {
@@ -142,13 +222,22 @@ body {
 
 .history-item-time {
     display: none;
-    /* Gemini usually keeps it simple */
+    /* Hidden for cleaner UI */
 }
 
+/* Pinned item indicator */
+.history-item.pinned .history-item-text::before {
+    content: "📌 ";
+}
+
+/* -----------------------------------------------------------------------------
+   3.5 History Item Dropdown Menu
+   ----------------------------------------------------------------------------- */
 .history-menu-wrapper {
     position: relative;
 }
 
+/* 3-dot menu button - hidden until hover */
 .history-menu-btn {
     background: transparent;
     border: none;
@@ -171,6 +260,7 @@ body {
     background: rgba(0, 0, 0, 0.08);
 }
 
+/* Dropdown menu container */
 .history-dropdown {
     position: fixed;
     background: #fff;
@@ -185,6 +275,7 @@ body {
     display: none;
 }
 
+/* Menu items */
 .dropdown-item {
     display: flex;
     align-items: center;
@@ -209,12 +300,10 @@ body {
     color: var(--text-secondary);
 }
 
-.history-item.pinned .history-item-text::before {
-    content: "📌 ";
-}
-
-
-/* Main Content Wrapper */
+/* -----------------------------------------------------------------------------
+   3.6 Content Wrapper
+   Flex container for sidebar + chat area
+   ----------------------------------------------------------------------------- */
 .content-wrapper {
     display: flex;
     flex: 1;
@@ -223,7 +312,10 @@ body {
     background: var(--bg-body);
 }
 
-/* Header (Top Bar with Logo/Profile) */
+/* -----------------------------------------------------------------------------
+   3.7 App Header
+   Top bar with branding and status
+   ----------------------------------------------------------------------------- */
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -243,9 +335,10 @@ body {
     font-size: 1.25rem;
     font-weight: 500;
     color: #5f6368;
-    /* Gemini grey logo color */
+    /* Google grey */
 }
 
+/* Status indicator (Ready/Thinking) */
 .status-indicator {
     display: flex;
     align-items: center;
@@ -257,6 +350,7 @@ body {
     border-radius: 20px;
 }
 
+/* Green dot for "Ready" status */
 .status-dot {
     width: 6px;
     height: 6px;
@@ -264,8 +358,14 @@ body {
     background-color: #1ea471;
 }
 
+/* =============================================================================
+   4. CHAT COMPONENTS
+   ============================================================================= */
 
-/* Chat Container */
+/* -----------------------------------------------------------------------------
+   4.1 Chat Container
+   Main scrollable area for messages
+   ----------------------------------------------------------------------------- */
 .chat-container {
     flex: 1;
     overflow-y: auto;
@@ -276,7 +376,10 @@ body {
     align-items: center;
 }
 
-/* Welcome Message (Hero) */
+/* -----------------------------------------------------------------------------
+   4.2 Welcome Message (Hero Section)
+   Shown when no conversation is active
+   ----------------------------------------------------------------------------- */
 .welcome-message {
     margin-top: 10vh;
     text-align: left;
@@ -293,6 +396,7 @@ body {
     letter-spacing: -0.05rem;
 }
 
+/* Animated gradient text effect */
 .gradient-text {
     background: var(--primary-gradient);
     -webkit-background-clip: text;
@@ -305,11 +409,23 @@ body {
     font-size: 3.5rem;
     font-weight: 500;
     color: #c4c7c5;
-    /* Muted grey for the second line */
+    /* Muted grey */
     letter-spacing: -0.05rem;
 }
 
-/* Messages */
+/* Active conversation state - hides welcome message */
+.chat-container.has-messages {
+    justify-content: flex-start;
+    padding-top: 2rem;
+}
+
+.chat-container.has-messages .welcome-message {
+    display: none;
+}
+
+/* -----------------------------------------------------------------------------
+   4.3 Message Bubbles
+   ----------------------------------------------------------------------------- */
 .message {
     width: 100%;
     max-width: 800px;
@@ -318,6 +434,7 @@ body {
     gap: 1rem;
 }
 
+/* User messages align right */
 .message.user {
     justify-content: flex-end;
 }
@@ -327,96 +444,25 @@ body {
     font-size: 1rem;
 }
 
+/* User message bubble - rounded pill, gray background */
 .message.user .message-content {
     background: #f0f4f9;
-    padding: 0.8rem 1.2rem;
-    border-radius: 1.2rem;
-    border-top-right-radius: 4px;
+    padding: 12px 20px;
+    border-radius: 20px 20px 4px 20px;
+    /* Tail on bottom-right */
+    color: #1f1f1f;
 }
 
+/* Assistant messages - plain text style */
 .message.assistant .message-content {
     background: transparent;
     padding: 0;
-    /* Assistant messages in Gemini often look like plain text with an icon */
 }
 
-/* Input Wrapper (Floating) */
-.input-wrapper {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    padding: 1rem;
-    background: var(--bg-body);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-#chat-form {
-    position: relative;
-    width: 100%;
-    max-width: 800px;
-    background: var(--input-bg);
-    border-radius: 3rem;
-    /* Highly rounded pill */
-    padding: 0.75rem 1rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    transition: background 0.2s, box-shadow 0.2s;
-}
-
-#chat-form:focus-within {
-    background: white;
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
-}
-
-.attach-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-main);
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 50%;
-}
-
-.attach-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-}
-
-#user-input {
-    flex: 1;
-    border: none;
-    background: transparent;
-    font-size: 1rem;
-    outline: none;
-    color: var(--text-main);
-    padding: 0.5rem;
-}
-
-#send-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-main);
-    cursor: pointer;
-    padding: 8px;
-    border-radius: 50%;
-}
-
-#send-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-}
-
-#send-btn svg {
-    /* Send icon adjustments */
-    width: 20px;
-    height: 20px;
-}
-
-
-/* Tools */
+/* -----------------------------------------------------------------------------
+   4.4 Tool Call Cards
+   Visual representation of agent tool invocations
+   ----------------------------------------------------------------------------- */
 .tool-call {
     width: 100%;
     max-width: 800px;
@@ -429,6 +475,7 @@ body {
     gap: 1rem;
 }
 
+/* Circular icon container */
 .tool-icon {
     width: 32px;
     height: 32px;
@@ -439,6 +486,7 @@ body {
     align-items: center;
     justify-content: center;
     color: #0b57d0;
+    /* Google blue */
 }
 
 .tool-name {
@@ -457,17 +505,168 @@ body {
     text-transform: uppercase;
     font-weight: 600;
     color: #0f9d58;
+    /* Google green */
 }
 
-/* Attribution */
-.attribution {
-    text-align: center;
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-    margin-top: 0.8rem;
+/* -----------------------------------------------------------------------------
+   4.5 Thinking Indicator
+   Animated dots showing "agent is thinking"
+   ----------------------------------------------------------------------------- */
+.thinking-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-/* File Attachment Pill */
+.thinking-text {
+    font-size: 0.9rem;
+    color: #444746;
+    font-weight: 500;
+}
+
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+/* Animated bouncing dots */
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background-color: #444746;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+    opacity: 0.6;
+}
+
+.typing-indicator span:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0s;
+}
+
+@keyframes bounce {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0);
+        opacity: 0.5;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* =============================================================================
+   5. INPUT & FORMS
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   5.1 Input Wrapper
+   Fixed position container at bottom of screen
+   ----------------------------------------------------------------------------- */
+.input-wrapper {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    padding: 1rem;
+    background: var(--bg-body);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* -----------------------------------------------------------------------------
+   5.2 Chat Form
+   Pill-shaped input container
+   ----------------------------------------------------------------------------- */
+#chat-form {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    background: var(--input-bg);
+    border-radius: 3rem;
+    /* Full pill shape */
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+
+/* Focus state - white background with shadow */
+#chat-form:focus-within {
+    background: white;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* -----------------------------------------------------------------------------
+   5.3 Attach Button (+)
+   ----------------------------------------------------------------------------- */
+.attach-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+}
+
+.attach-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* -----------------------------------------------------------------------------
+   5.4 Text Input
+   ----------------------------------------------------------------------------- */
+#user-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    outline: none;
+    color: var(--text-main);
+    padding: 0.5rem;
+}
+
+/* -----------------------------------------------------------------------------
+   5.5 Send Button
+   ----------------------------------------------------------------------------- */
+#send-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+}
+
+#send-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+#send-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* -----------------------------------------------------------------------------
+   5.6 File Attachment Pill
+   Shows selected file before sending
+   ----------------------------------------------------------------------------- */
 .file-pill {
     background: #e3f2fd;
     color: #0b57d0;
@@ -503,11 +702,12 @@ body {
     color: #041e49;
 }
 
-/* Attachment Menu */
+/* -----------------------------------------------------------------------------
+   5.7 Attachment Menu Dropdown
+   ----------------------------------------------------------------------------- */
 .attachment-menu {
     position: absolute;
     bottom: 3.5rem;
-    /* Above the input bar */
     left: 1rem;
     background: white;
     border-radius: 12px;
@@ -545,83 +745,14 @@ body {
     color: #444746;
 }
 
-/* Cloud Picker Modal Styles Removed */
-
-/* Active Conversation State */
-.chat-container.has-messages {
-    justify-content: flex-start;
-    padding-top: 2rem;
-}
-
-.chat-container.has-messages .welcome-message {
-    display: none;
-}
-
-/* Refined Message Styling */
-.message.user .message-content {
-    border-radius: 20px 20px 4px 20px;
-    /* Rounded pill shape */
-    background: #f0f4f9;
-    /* Light gray like Gemini */
-    color: #1f1f1f;
-    padding: 12px 20px;
-}
-
-/* Typing Indicator */
-.thinking-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.thinking-text {
-    font-size: 0.9rem;
-    color: #444746;
-    font-weight: 500;
-}
-
-.typing-indicator {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 0;
-}
-
-.typing-indicator span {
-    width: 8px;
-    height: 8px;
-    background-color: #444746;
-    /* Gemini text color */
-    border-radius: 50%;
-    animation: bounce 1.4s infinite ease-in-out both;
-    opacity: 0.6;
-}
-
-.typing-indicator span:nth-child(1) {
-    animation-delay: -0.32s;
-}
-
-.typing-indicator span:nth-child(2) {
-    animation-delay: -0.16s;
-}
-
-.typing-indicator span:nth-child(3) {
-    animation-delay: 0s;
-}
-
-@keyframes bounce {
-
-    0%,
-    80%,
-    100% {
-        transform: scale(0);
-        opacity: 0.5;
-    }
-
-    40% {
-        transform: scale(1);
-        opacity: 1;
-    }
+/* -----------------------------------------------------------------------------
+   5.8 Attribution Footer
+   ----------------------------------------------------------------------------- */
+.attribution {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 0.8rem;
 }
 
 .attribution a {
@@ -629,21 +760,14 @@ body {
     text-decoration: underline;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-}
+/* =============================================================================
+   6. MODALS & OVERLAYS
+   ============================================================================= */
 
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #c4c7c5;
-    border-radius: 4px;
-}
-
-/* Confirmation Modal - Material Design 3 / Gemini Style */
+/* -----------------------------------------------------------------------------
+   6.1 Modal Overlay (Backdrop)
+   Semi-transparent background behind modals
+   ----------------------------------------------------------------------------- */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -651,7 +775,7 @@ body {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.32);
-    /* Standard scrim opacity */
+    /* Standard MD3 scrim */
     backdrop-filter: blur(2px);
     display: flex;
     justify-content: center;
@@ -668,13 +792,17 @@ body {
     transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s step-start;
 }
 
+/* -----------------------------------------------------------------------------
+   6.2 Modal Content Box
+   The actual dialog container
+   ----------------------------------------------------------------------------- */
 .modal-content {
     background: #ffffff;
     padding: 24px;
     border-radius: 28px;
+    /* MD3 dialog radius */
     width: 90%;
     max-width: 312px;
-    /* Standard MD3 standard dialog width */
     box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
     transform: scale(0.95);
     transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
@@ -700,6 +828,9 @@ body {
     font-size: 1rem;
 }
 
+/* -----------------------------------------------------------------------------
+   6.3 Modal Action Buttons
+   ----------------------------------------------------------------------------- */
 .modal-actions {
     display: flex;
     gap: 8px;
@@ -716,16 +847,17 @@ body {
     font-size: 0.9rem;
 }
 
+/* Secondary button (Cancel) - text only */
 .btn-secondary {
     background: transparent;
     color: #0b57d0;
-    /* Google Blue */
 }
 
 .btn-secondary:hover {
     background: rgba(11, 87, 208, 0.08);
 }
 
+/* Danger button (Delete) - red fill */
 .btn-danger {
     background: #b3261e;
     /* Material Error Red */
@@ -737,6 +869,7 @@ body {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/* Primary button (Save) - blue fill */
 .btn-primary {
     background: #0b57d0;
     color: white;
@@ -747,7 +880,10 @@ body {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Input Modal */
+/* -----------------------------------------------------------------------------
+   6.4 Input Modal
+   Extended modal with text input field
+   ----------------------------------------------------------------------------- */
 .input-modal-content {
     max-width: 400px;
 }
@@ -769,7 +905,10 @@ body {
     box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.2);
 }
 
-/* Toast Notification */
+/* -----------------------------------------------------------------------------
+   6.5 Toast Notification
+   Temporary feedback message at bottom of screen
+   ----------------------------------------------------------------------------- */
 .toast {
     position: fixed;
     bottom: 24px;
@@ -802,7 +941,14 @@ body {
     flex-shrink: 0;
 }
 
-/* Sidebar New Styles */
+/* =============================================================================
+   7. SIDEBAR ENHANCED COMPONENTS
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   7.1 Sidebar Top Section
+   Contains search button and new chat button
+   ----------------------------------------------------------------------------- */
 .sidebar-top-section {
     display: flex;
     flex-direction: column;
@@ -832,28 +978,29 @@ body {
     background: rgba(31, 31, 31, 0.08);
 }
 
+/* -----------------------------------------------------------------------------
+   7.2 New Chat Button
+   Prominent button to start a new conversation
+   ----------------------------------------------------------------------------- */
 .new-chat-btn {
     display: flex;
     align-items: center;
     gap: 12px;
     background: #d3e3fd;
-    /* Light Blueish */
+    /* Light blue */
     color: #041e49;
-    /* Dark Blue Text */
+    /* Dark blue text */
     border: none;
     border-radius: 16px;
     padding: 12px 16px;
     font-size: 0.9rem;
     font-family: var(--font-family);
-    /* Explicit font */
     font-weight: 500;
     cursor: pointer;
     pointer-events: auto;
-    /* Force clickable */
     transition: background 0.2s, box-shadow 0.2s;
     width: 100%;
     margin-top: 0.5rem;
-    /* Add some space from icons row */
 }
 
 .new-chat-btn:hover {
@@ -863,7 +1010,6 @@ body {
 
 .new-chat-btn svg {
     flex-shrink: 0;
-    /* Prevent icon shrinking */
 }
 
 .new-chat-btn .new-chat-text {
@@ -871,16 +1017,19 @@ body {
     white-space: nowrap;
 }
 
-/* Search Modal Styles */
+/* =============================================================================
+   8. SEARCH MODAL
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   8.1 Search Modal Content
+   Large modal for searching conversation history
+   ----------------------------------------------------------------------------- */
 .search-modal-content {
     background: #ffffff;
     padding: 3rem;
-    /* Large padding */
     width: 100%;
     max-width: 800px;
-    /* Wider than alert modal */
-    height: 100%;
-    /* Full screen-ish feel but usually constrained */
     max-height: 80vh;
     border-radius: 28px;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
@@ -889,7 +1038,7 @@ body {
     overflow: hidden;
 }
 
-/* On mobile, full screen */
+/* Mobile: full screen */
 @media (max-width: 600px) {
     .search-modal-content {
         max-width: 100%;
@@ -905,9 +1054,12 @@ body {
     color: #1f1f1f;
     margin-bottom: 2rem;
     text-align: center;
-    /* Or left? Image shows center/leftish but let's stick to standard flow */
 }
 
+/* -----------------------------------------------------------------------------
+   8.2 Search Input
+   Pill-shaped search field with icon
+   ----------------------------------------------------------------------------- */
 .search-input-container {
     position: relative;
     width: 100%;
@@ -927,7 +1079,6 @@ body {
     padding: 16px 16px 16px 56px;
     /* Space for icon */
     border-radius: 36px;
-    /* Pill shape */
     border: 1px solid #e0e3e7;
     background: #f0f4f9;
     font-size: 1.1rem;
@@ -942,6 +1093,9 @@ body {
     border-color: transparent;
 }
 
+/* -----------------------------------------------------------------------------
+   8.3 Search Results
+   ----------------------------------------------------------------------------- */
 .search-results-section {
     flex: 1;
     overflow-y: auto;
@@ -969,7 +1123,6 @@ body {
     align-items: center;
     padding: 12px 16px;
     border-bottom: 1px solid #f0f0f0;
-    /* Subtle separator */
     cursor: pointer;
     transition: background 0.2s;
     color: var(--text-main);
@@ -990,4 +1143,21 @@ body {
 .search-result-date {
     font-size: 0.85rem;
     color: var(--text-secondary);
+}
+
+/* =============================================================================
+   9. SCROLLBAR STYLING
+   ============================================================================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c4c7c5;
+    border-radius: 4px;
 }

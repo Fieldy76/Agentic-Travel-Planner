@@ -1,20 +1,114 @@
+<!--
+================================================================================
+AGENTIC TRAVEL PLANNER - Main HTML Template
+================================================================================
+
+This is the main HTML file for the Agentic Travel Planner web interface.
+It provides a single-page application (SPA) structure for the AI-powered
+travel assistant chat interface.
+
+Architecture Overview:
+─────────────────────
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           APP CONTAINER                                 │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                        HEADER                                      │ │
+│  │  [☰ Menu Toggle]  [Agentic Travel Planner]        [● Status]      │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────┐  ┌─────────────────────────────────────────────────┐ │
+│  │  SIDEBAR    │  │                 CHAT CONTAINER                   │ │
+│  │             │  │                                                  │ │
+│  │ [🔍 Search] │  │          "Hello, Traveler"                      │ │
+│  │ [+ New Chat]│  │    "How can I help you explore..."              │ │
+│  │             │  │                                                  │ │
+│  │ Recent:     │  │         [User messages appear here]              │ │
+│  │ • Chat 1    │  │         [Assistant responses here]               │ │
+│  │ • Chat 2    │  │         [Tool calls visualized]                  │ │
+│  │ • ...       │  │                                                  │ │
+│  │             │  │                                                  │ │
+│  └─────────────┘  └─────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │                      INPUT WRAPPER                                 │ │
+│  │   [+] [    Type your message here...                    ] [Send]  │ │
+│  │           Weather & Flight data attribution                       │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Component Breakdown:
+───────────────────
+1. HEADER - App branding and status indicator
+2. SIDEBAR - Collapsible history panel with search and new chat
+3. CHAT CONTAINER - Main conversation area with welcome message
+4. INPUT WRAPPER - Fixed-position input form with file attachment
+5. MODALS - Confirmation, input, and search overlays
+6. TOAST - Notification system for user feedback
+
+Key Features:
+─────────────
+- Responsive design (collapses sidebar on mobile)
+- Dark gradient hero text (Gemini-inspired)
+- File upload support for documents/images
+- Real-time status indicator
+- Search functionality across conversation history
+- Keyboard shortcuts (Enter to send, Escape to close modals)
+
+External Dependencies:
+─────────────────────
+- Google Fonts: Inter (400, 500, 600 weights)
+- style.css: All styling (Material Design 3 inspired)
+- app.js: All JavaScript functionality
+
+Author: Agentic Travel Planner Team
+================================================================================
+-->
 <!DOCTYPE html>
 <html lang="en">
 
+<!-- ========================================================================
+     HEAD SECTION
+     Contains meta tags, fonts, and stylesheet links
+     ======================================================================== -->
+
 <head>
+    <!-- Character encoding for proper text rendering -->
     <meta charset="UTF-8">
+
+    <!-- Responsive viewport for mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Page title shown in browser tab -->
     <title>Agentic Travel Planner</title>
+
+    <!-- Google Fonts: Inter for modern, clean typography -->
+    <!-- Preconnect hints for faster font loading -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Main stylesheet - version query param for cache busting -->
     <link rel="stylesheet" href="/static/css/style.css?v=99">
 </head>
 
+<!-- ========================================================================
+     BODY SECTION
+     Main application structure
+     ======================================================================== -->
+
 <body>
+    <!-- ====================================================================
+         APP CONTAINER
+         Root wrapper for the entire application
+         ==================================================================== -->
     <div class="app-container">
+
+        <!-- ================================================================
+             HEADER
+             Top bar with menu toggle, branding, and status
+             ================================================================ -->
         <header class="app-header">
+            <!-- Left side: Menu toggle and title -->
             <div class="header-left">
+                <!-- Hamburger menu button to toggle sidebar -->
                 <button id="history-toggle" class="history-toggle" title="Main menu">
                     <svg class="menu-icon" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960"
                         width="24" fill="currentColor">
@@ -23,15 +117,29 @@
                 </button>
                 <h1>Agentic Travel Planner</h1>
             </div>
+
+            <!-- Right side: Agent status indicator -->
+            <!-- Shows "Ready" or "Thinking..." based on processing state -->
             <div class="status-indicator" id="status-indicator">
                 <span class="status-dot"></span>
                 <span class="status-text">Ready</span>
             </div>
         </header>
 
+        <!-- ================================================================
+             CONTENT WRAPPER
+             Contains sidebar and main chat area side-by-side
+             ================================================================ -->
         <div class="content-wrapper">
+
+            <!-- ============================================================
+                 HISTORY SIDEBAR
+                 Collapsible panel for conversation history
+                 ============================================================ -->
             <aside class="history-sidebar collapsed" id="history-sidebar">
+                <!-- Top section with search and new chat buttons -->
                 <div class="sidebar-top-section">
+                    <!-- Search button row -->
                     <div class="sidebar-icons-row">
                         <button id="search-btn" class="sidebar-icon-btn" title="Search">
                             <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"
@@ -42,6 +150,7 @@
                         </button>
                     </div>
 
+                    <!-- New Chat button - starts fresh conversation -->
                     <button id="new-chat-btn" class="new-chat-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24"
                             fill="currentColor">
@@ -51,8 +160,10 @@
                     </button>
                 </div>
 
+                <!-- Recent conversations header -->
                 <div class="history-header">
                     <h3>Recent</h3>
+                    <!-- Clear all history button -->
                     <button id="clear-history" class="clear-history-btn" title="Clear all history">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -62,26 +173,43 @@
                         </svg>
                     </button>
                 </div>
+
+                <!-- Scrollable list of conversation history items -->
+                <!-- Populated dynamically by app.js -->
                 <div class="history-list" id="history-list">
                     <div class="history-empty">No search history yet</div>
                 </div>
             </aside>
 
+            <!-- ============================================================
+                 CHAT CONTAINER
+                 Main conversation display area
+                 ============================================================ -->
             <main class="chat-container" id="chat-container">
+                <!-- Welcome message shown when no conversation is active -->
+                <!-- Hidden via CSS when chat has messages (.has-messages class) -->
                 <div class="welcome-message">
                     <div class="hero-text">
+                        <!-- Gradient text effect (Gemini-inspired) -->
                         <span class="gradient-text">Hello, Traveler</span>
                     </div>
                     <p class="subtitle">How can I help you explore the world today?</p>
                 </div>
-                <!-- Messages will be inserted here -->
+                <!-- Messages will be inserted here by app.js -->
             </main>
         </div>
     </div>
 
+    <!-- ====================================================================
+         INPUT WRAPPER
+         Fixed-position chat input area
+         ==================================================================== -->
     <div class="input-wrapper">
         <form id="chat-form">
+            <!-- Hidden file input triggered by attachment menu -->
             <input type="file" id="file-input" style="display: none;">
+
+            <!-- Attachment menu trigger button (+) -->
             <button type="button" class="attach-btn" title="Open menu" id="attach-menu-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -90,6 +218,7 @@
                 </svg>
             </button>
 
+            <!-- Attachment dropdown menu (file upload option) -->
             <div class="attachment-menu" id="attachment-menu">
                 <label for="file-input" class="menu-item">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -101,20 +230,30 @@
                     <span>Upload files</span>
                 </label>
             </div>
+
+            <!-- Main text input field -->
             <input type="text" id="user-input" placeholder="Ask Agentic Travel..." autocomplete="off">
+
+            <!-- Send button (arrow icon) -->
             <button type="submit" id="send-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
                 </svg>
             </button>
         </form>
+
+        <!-- API attribution footer -->
         <div class="attribution">
             Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> •
             Flight data by <a href="https://developers.amadeus.com/" target="_blank" rel="noopener">Amadeus</a>
         </div>
     </div>
     </div>
-    <!-- Confirmation Modal -->
+
+    <!-- ====================================================================
+         CONFIRMATION MODAL
+         Used for delete/clear confirmations
+         ==================================================================== -->
     <div id="confirmation-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <h3 id="modal-title">Confirm Action</h3>
@@ -126,7 +265,10 @@
         </div>
     </div>
 
-    <!-- Input Modal (for Rename, etc.) -->
+    <!-- ====================================================================
+         INPUT MODAL
+         Used for rename operations (text input required)
+         ==================================================================== -->
     <div id="input-modal" class="modal-overlay hidden">
         <div class="modal-content input-modal-content">
             <h3 id="input-modal-title">Rename</h3>
@@ -138,7 +280,10 @@
         </div>
     </div>
 
-    <!-- Toast Notification -->
+    <!-- ====================================================================
+         TOAST NOTIFICATION
+         Temporary feedback messages (e.g., "Copied to clipboard!")
+         ==================================================================== -->
     <div id="toast-notification" class="toast hidden">
         <svg class="toast-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" stroke-width="2">
@@ -147,10 +292,14 @@
         <span id="toast-message">Copied to clipboard!</span>
     </div>
 
-    <!-- Search Modal -->
+    <!-- ====================================================================
+         SEARCH MODAL
+         Full-screen search overlay for conversation history
+         ==================================================================== -->
     <div id="search-modal" class="modal-overlay hidden">
         <div class="search-modal-content">
             <h2 class="search-title">Search</h2>
+            <!-- Search input with icon -->
             <div class="search-input-container">
                 <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960"
                     width="24" fill="currentColor">
@@ -160,15 +309,20 @@
                 <input type="text" id="modal-search-input" placeholder="Search for chats">
             </div>
 
+            <!-- Search results section -->
             <div class="search-results-section">
                 <h4 class="section-title">Recent</h4>
                 <div id="search-results-list" class="search-results-list">
-                    <!-- Results populated by JS -->
+                    <!-- Results populated by app.js -->
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- ====================================================================
+         JAVASCRIPT
+         Main application logic (loaded last for faster initial render)
+         ==================================================================== -->
     <script src="/static/js/app.js?v=99"></script>
 </body>
 

@@ -1,49 +1,144 @@
+/**
+ * ================================================================================
+ * AGENTIC TRAVEL PLANNER - Main Application JavaScript
+ * ================================================================================
+ * 
+ * This file contains all the client-side JavaScript for the Agentic Travel Planner.
+ * It handles user interactions, API communication, real-time streaming, and UI updates.
+ * 
+ * Architecture Overview:
+ * ─────────────────────
+ * 
+ *   ┌─────────────────┐         ┌──────────────────┐
+ *   │   User Input    │────────▶│  Form Submission │
+ *   └─────────────────┘         └────────┬─────────┘
+ *                                        │
+ *                                        ▼
+ *   ┌─────────────────────────────────────────────────┐
+ *   │              Fetch API (POST /api/chat)         │
+ *   │      Sends: {message, file} as FormData         │
+ *   └────────────────────┬────────────────────────────┘
+ *                        │
+ *                        ▼
+ *   ┌─────────────────────────────────────────────────┐
+ *   │            NDJSON Streaming Response            │
+ *   │  Events: message, tool_call, tool_result, error │
+ *   └────────────────────┬────────────────────────────┘
+ *                        │
+ *          ┌─────────────┼─────────────┐
+ *          ▼             ▼             ▼
+ *   ┌──────────┐  ┌───────────┐  ┌───────────┐
+ *   │ Message  │  │ Tool Call │  │ Tool      │
+ *   │ Display  │  │ Display   │  │ Result    │
+ *   └──────────┘  └───────────┘  └───────────┘
+ *                        │
+ *                        ▼
+ *   ┌─────────────────────────────────────────────────┐
+ *   │           LocalStorage Persistence              │
+ *   │     Conversation history saved automatically    │
+ *   └─────────────────────────────────────────────────┘
+ * 
+ * Key Features:
+ * ─────────────
+ * 1. NDJSON Streaming - Real-time response parsing
+ * 2. Conversation History - LocalStorage persistence
+ * 3. File Uploads - Multipart form data support
+ * 4. Modal System - Confirmation, input, search dialogs
+ * 5. Tool Visualization - Icons and status for agent tools
+ * 6. Toast Notifications - User feedback messages
+ * 
+ * Event Types (from server):
+ * ─────────────────────────
+ * - message: Text content from the assistant
+ * - tool_call: Agent is invoking a tool
+ * - tool_result: Tool execution completed
+ * - error: Something went wrong
+ * 
+ * LocalStorage Keys:
+ * ─────────────────
+ * - travelSearchHistory: Array of conversation objects
+ * 
+ * Author: Agentic Travel Planner Team
+ * ================================================================================
+ */
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+// Wait for DOM to be fully loaded before initializing
 document.addEventListener('DOMContentLoaded', () => {
+
+    // =========================================================================
+    // DOM ELEMENT REFERENCES
+    // =========================================================================
+    // Cache references to frequently used DOM elements for performance
+
+    // Core chat elements
     const chatForm = document.getElementById('chat-form');
     const userInput = document.getElementById('user-input');
     const chatContainer = document.getElementById('chat-container');
     const sendBtn = document.getElementById('send-btn');
+
+    // Status indicator elements
     const statusIndicator = document.getElementById('status-indicator');
     const statusDot = statusIndicator.querySelector('.status-dot');
     const statusText = statusIndicator.querySelector('.status-text');
+
+    // Sidebar elements
     const historyToggle = document.getElementById('history-toggle');
     const historySidebar = document.getElementById('history-sidebar');
     const historyList = document.getElementById('history-list');
     const clearHistoryBtn = document.getElementById('clear-history');
-    const newChatBtn = document.getElementById('new-chat-btn'); // New Chat Button
+    const newChatBtn = document.getElementById('new-chat-btn');
 
-    // Search Modal Elements
+    // Search modal elements
     const searchBtn = document.getElementById('search-btn');
     const searchModal = document.getElementById('search-modal');
     const modalSearchInput = document.getElementById('modal-search-input');
     const searchResultsList = document.getElementById('search-results-list');
 
-    let isProcessing = false;
-    let searchHistory = loadSearchHistory();
-    let currentConversationId = null;
+    // =========================================================================
+    // APPLICATION STATE
+    // =========================================================================
+    // Global state variables for the application
 
-    // Search Modal Logic
+    let isProcessing = false;               // True when waiting for agent response
+    let searchHistory = loadSearchHistory(); // Array of conversation objects
+    let currentConversationId = null;        // ID of the active conversation
+    let conversationMessages = [];           // Messages in current conversation
+
+    // =========================================================================
+    // SEARCH MODAL LOGIC
+    // =========================================================================
+    // Handles the full-screen search overlay for finding conversations
+
     if (searchBtn && searchModal) {
+        // Open search modal when search button is clicked
         searchBtn.addEventListener('click', () => {
             openSearchModal();
         });
 
-        // Close on outside click
+        // Close modal when clicking outside the content area
         searchModal.addEventListener('click', (e) => {
             if (e.target === searchModal) {
                 closeSearchModal();
             }
         });
 
-        // Search filtering
+        // Filter results as user types
         modalSearchInput.addEventListener('input', (e) => {
             renderSearchResults(e.target.value);
         });
     }
 
+    /**
+     * Opens the search modal with animation.
+     * Resets the search input and shows all conversations initially.
+     */
     function openSearchModal() {
         if (!searchModal) return;
         searchModal.classList.remove('hidden');
+        // Use requestAnimationFrame for smooth CSS transition
         requestAnimationFrame(() => searchModal.classList.add('active'));
 
         modalSearchInput.value = '';
@@ -51,30 +146,43 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSearchResults(); // Show all initially
     }
 
+    /**
+     * Closes the search modal with fade-out animation.
+     * Uses setTimeout to wait for animation before hiding.
+     */
     function closeSearchModal() {
         if (!searchModal) return;
         searchModal.classList.remove('active');
         setTimeout(() => searchModal.classList.add('hidden'), 200);
     }
 
+    /**
+     * Renders filtered search results based on query string.
+     * Filters conversation titles case-insensitively.
+     * 
+     * @param {string} query - Search query to filter by (default: empty = show all)
+     */
     function renderSearchResults(query = '') {
         if (!searchResultsList) return;
         searchResultsList.innerHTML = '';
 
+        // Filter conversations by title
         const filteredHistory = searchHistory.filter(c =>
             c.title.toLowerCase().includes(query.toLowerCase())
         );
 
+        // Show "no results" message if nothing matches
         if (filteredHistory.length === 0) {
             searchResultsList.innerHTML = '<div style="padding: 1rem; color: #888;">No results found</div>';
             return;
         }
 
+        // Create a clickable item for each matching conversation
         filteredHistory.forEach(conversation => {
             const item = document.createElement('div');
             item.className = 'search-result-item';
 
-            // Format time similarly to image "Today", "Dec 3", etc.
+            // Format timestamp as "Today", "Yesterday", or "Dec 3"
             const timeStr = formatSimpleDate(conversation.timestamp);
 
             item.innerHTML = `
@@ -82,9 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="search-result-date">${timeStr}</div>
             `;
 
+            // Load conversation when clicked
             item.addEventListener('click', () => {
                 loadConversation(conversation.id);
                 closeSearchModal();
+                // On mobile, also collapse sidebar
                 if (window.innerWidth < 768) {
                     historySidebar.classList.add('collapsed');
                 }
@@ -94,6 +204,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Formats a timestamp into a human-readable relative date.
+     * Returns "Today", "Yesterday", or short date format.
+     * 
+     * @param {string} isoString - ISO 8601 date string
+     * @returns {string} Formatted date string
+     */
     function formatSimpleDate(isoString) {
         const date = new Date(isoString);
         const now = new Date();
@@ -106,61 +223,80 @@ document.addEventListener('DOMContentLoaded', () => {
         if (diffDays === 1) {
             return 'Yesterday';
         }
-        // Return "Dec 3"
+        // Return short date like "Dec 3"
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     }
 
-    // ...
+    // =========================================================================
+    // NEW CHAT BUTTON HANDLER
+    // =========================================================================
 
     if (newChatBtn) {
         newChatBtn.addEventListener('click', () => {
             startNewConversation();
-            // On mobile, maybe close sidebar?
+            // On mobile, collapse sidebar after starting new chat
             if (window.innerWidth < 768) {
                 historySidebar.classList.add('collapsed');
             }
         });
     }
-    let conversationMessages = [];
 
-    // Initialize history display
+    // Initialize history display on page load
     renderHistory();
 
-    const fileInput = document.getElementById('file-input');
-    // const attachBtn = document.querySelector('.attach-btn'); // Removed
-    let selectedFile = null;
+    // =========================================================================
+    // FILE ATTACHMENT HANDLING
+    // =========================================================================
 
-    // Toggle history sidebar
+    const fileInput = document.getElementById('file-input');
+    let selectedFile = null;  // Currently selected file (if any)
+
+    // =========================================================================
+    // SIDEBAR TOGGLE
+    // =========================================================================
+
     historyToggle.addEventListener('click', () => {
         historySidebar.classList.toggle('collapsed');
     });
 
+    // =========================================================================
+    // ATTACHMENT MENU
+    // =========================================================================
+    // Pop-up menu for file upload options
+
     const menuBtn = document.getElementById('attach-menu-btn');
     const menu = document.getElementById('attachment-menu');
 
-    // Toggle Menu
+    // Toggle menu visibility on button click
     menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         menu.classList.toggle('active');
     });
 
-    // Close menu when clicking outside
+    // Close menu when clicking anywhere else
     document.addEventListener('click', (e) => {
         if (!menu.contains(e.target) && !menuBtn.contains(e.target)) {
             menu.classList.remove('active');
         }
     });
 
-    // Handle File Selection (Label triggers input, but we also want to close menu)
+    // Close menu when file input is clicked
     fileInput.addEventListener('click', () => {
         menu.classList.remove('active');
     });
 
-    // Extracted logic for UI Update
+    /**
+     * Creates and displays a file pill showing the selected file.
+     * The pill includes a remove button to deselect the file.
+     * 
+     * @param {File} file - The selected file object
+     */
     function updateFilePill(file) {
+        // Remove any existing pill first
         let existingPill = document.querySelector('.file-pill');
         if (existingPill) existingPill.remove();
 
+        // Create new pill element
         const pill = document.createElement('div');
         pill.className = 'file-pill';
         pill.innerHTML = `
@@ -168,8 +304,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <button type="button" class="remove-file">×</button>
         `;
 
+        // Insert before the text input
         chatForm.insertBefore(pill, userInput);
 
+        // Handle remove button click
         pill.querySelector('.remove-file').addEventListener('click', () => {
             selectedFile = null;
             if (fileInput) fileInput.value = '';
@@ -179,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.focus();
     }
 
-    // File Selection
+    // Handle file selection
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
             selectedFile = e.target.files[0];
@@ -187,22 +325,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Clear history
-    // Clear history
+    // =========================================================================
+    // CLEAR HISTORY BUTTON
+    // =========================================================================
+
     clearHistoryBtn.addEventListener('click', () => {
+        // Show confirmation modal before clearing
         showConfirmModal(
             'Clear History',
             'Are you sure you want to clear all search history?',
             () => {
+                // User confirmed - clear everything
                 searchHistory = [];
                 saveSearchHistory();
                 renderHistory();
-
-                // Also clear all chat messages and start new conversation
                 startNewConversation();
             }
         );
     });
+
+    // =========================================================================
+    // CHAT FORM SUBMISSION
+    // =========================================================================
+    // Main handler for sending messages to the agent
 
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -210,37 +355,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let fileToSend = null;
 
-        // Handle attachment text & preparation
+        // Handle file attachment
         if (selectedFile) {
-            fileToSend = selectedFile; // Capture file before resetting
+            fileToSend = selectedFile;
 
-            // Reset UI file input state
+            // Reset file state
             selectedFile = null;
             fileInput.value = '';
             const pill = document.querySelector('.file-pill');
             if (pill) pill.remove();
         }
 
+        // Don't submit empty messages (unless there's a file)
         if ((!message && !fileToSend) || isProcessing) return;
 
-        // Switch UI to active conversation mode
+        // Switch UI to "active conversation" mode (hides welcome message)
         chatContainer.classList.add('has-messages');
 
-        // If starting a new conversation, create a history entry
+        // Create new conversation if this is the first message
         if (currentConversationId === null) {
             currentConversationId = Date.now().toString();
             addConversationToHistory(message);
         }
 
-        // Add User Message
+        // Display user message
         appendMessage('user', message);
         saveCurrentConversation();
 
+        // Clear input and show processing state
         userInput.value = '';
         setProcessing(true);
 
         try {
-            // Prepare FormData for multipart upload
+            // ─────────────────────────────────────────────────────────────────
+            // API REQUEST
+            // ─────────────────────────────────────────────────────────────────
+            // Send message to the backend as multipart form data
+
             const formData = new FormData();
             formData.append('message', message);
             if (fileToSend) {
@@ -249,24 +400,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                // Content-Type is set automatically by browser for FormData with boundary
+                // Note: Don't set Content-Type header - browser sets it with boundary
                 body: formData
             });
 
+            // ─────────────────────────────────────────────────────────────────
+            // STREAMING RESPONSE PARSING (NDJSON)
+            // ─────────────────────────────────────────────────────────────────
+            // The server sends newline-delimited JSON (NDJSON) events.
+            // We read the stream incrementally and parse each complete line.
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '';
+            let buffer = '';  // Accumulates partial data between reads
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
+                // Decode chunk and add to buffer
                 buffer += decoder.decode(value, { stream: true });
+
+                // Split by newlines to get complete events
                 const lines = buffer.split('\n');
 
-                // Process all complete lines
+                // Keep the last (potentially incomplete) line in the buffer
                 buffer = lines.pop();
 
+                // Process each complete line
                 for (const line of lines) {
                     if (line.trim()) {
                         try {
@@ -282,24 +443,38 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error:', error);
             appendMessage('assistant', 'Sorry, something went wrong. Please try again.');
         } finally {
+            // Always reset processing state
             setProcessing(false);
-            saveCurrentConversation(); // Save final state
+            saveCurrentConversation();
         }
     });
 
+    // =========================================================================
+    // EVENT HANDLING
+    // =========================================================================
+    // Processes events received from the streaming API
+
+    /**
+     * Handles an event from the NDJSON stream.
+     * Routes to appropriate handler based on event type.
+     * 
+     * @param {Object} event - Parsed event object from stream
+     * @param {string} event.type - Event type (message, tool_call, tool_result, error)
+     */
     function handleEvent(event) {
         switch (event.type) {
             case 'message':
-                // Only show messages that don't contain raw tool output
+                // Filter out raw tool output messages
                 if (!event.content.includes('```tool_outputs')) {
                     appendMessage('assistant', event.content);
                 }
                 break;
             case 'tool_call':
+                // Show tool call card with "running" status
                 appendToolCall(event.name, event.arguments);
                 break;
             case 'tool_result':
-                // Just update the status, don't display the raw result
+                // Update the tool card to show completion
                 updateToolResult(event.name, event.content, event.is_error);
                 break;
             case 'error':
@@ -308,6 +483,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // =========================================================================
+    // MESSAGE DISPLAY
+    // =========================================================================
+
+    /**
+     * Appends a message bubble to the chat container.
+     * Handles markdown link rendering and HTML escaping.
+     * 
+     * @param {string} role - 'user' or 'assistant'
+     * @param {string} content - Message text content
+     */
     function appendMessage(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
@@ -315,10 +501,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
-        // Render Markdown links: [text](url) -> <a href="url" target="_blank">text</a>
-        // Also handle newlines
+        // Process content: escape HTML, convert newlines, render links
         let formattedContent = escapeHtml(content)
             .replace(/\n/g, '<br>')
+            // Convert markdown links [text](url) to HTML anchors
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
         contentDiv.innerHTML = formattedContent;
@@ -327,16 +513,27 @@ document.addEventListener('DOMContentLoaded', () => {
         chatContainer.appendChild(messageDiv);
         scrollToBottom();
 
-        // Update internal state
+        // Update internal state for persistence
         conversationMessages.push({ role, content });
     }
 
+    // =========================================================================
+    // TOOL CALL DISPLAY
+    // =========================================================================
+
+    /**
+     * Displays a tool call card showing the agent is using a tool.
+     * Shows tool icon, name, arguments, and "running" status.
+     * 
+     * @param {string} name - Tool name (e.g., 'search_flights')
+     * @param {Object} args - Tool arguments
+     */
     function appendToolCall(name, args) {
         const toolDiv = document.createElement('div');
         toolDiv.className = 'tool-call';
-        toolDiv.id = `tool-${Date.now()}`; // Simple ID generation
+        toolDiv.id = `tool-${Date.now()}`;
 
-        // Get friendly display text
+        // Get user-friendly display information
         const displayInfo = getToolDisplayInfo(name, args);
 
         toolDiv.innerHTML = `
@@ -353,10 +550,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chatContainer.appendChild(toolDiv);
         scrollToBottom();
 
-        // Store reference to update later
+        // Store reference to update status later
         window.lastToolDiv = toolDiv;
 
-        // Add to history state (simplified)
+        // Add to conversation state
         conversationMessages.push({
             role: 'tool_call_ui',
             name,
@@ -365,8 +562,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Returns user-friendly display information for a tool.
+     * Maps tool names to icons, titles, and descriptions.
+     * 
+     * @param {string} name - Tool name
+     * @param {Object} args - Tool arguments
+     * @returns {Object} Display info with icon, title, description, runningText
+     */
     function getToolDisplayInfo(name, args) {
-        // Return friendly display text based on tool type
         switch (name) {
             case 'search_flights':
                 return {
@@ -413,6 +617,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Updates the last tool call card with completion status.
+     * Changes "running" to "Completed" or "Error".
+     * 
+     * @param {string} name - Tool name (for logging)
+     * @param {string} content - Tool result content (unused in UI)
+     * @param {boolean} isError - Whether the tool execution failed
+     */
     function updateToolResult(name, content, isError) {
         if (window.lastToolDiv) {
             const statusDiv = window.lastToolDiv.querySelector('.tool-status');
@@ -431,24 +643,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Converts snake_case tool name to Title Case.
+     * Example: "search_flights" → "Search Flights"
+     * 
+     * @param {string} name - Tool name in snake_case
+     * @returns {string} Formatted tool name
+     */
     function formatToolName(name) {
         return name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
     }
 
+    /**
+     * Scrolls the chat container to show the latest message.
+     */
     function scrollToBottom() {
         chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
+    // =========================================================================
+    // PROCESSING STATE
+    // =========================================================================
+
+    /**
+     * Updates the UI to reflect processing state.
+     * Shows/hides the "Thinking" bubble and disables input.
+     * 
+     * @param {boolean} processing - True when waiting for response
+     */
     function setProcessing(processing) {
         isProcessing = processing;
         userInput.disabled = processing;
         sendBtn.disabled = processing;
 
         if (processing) {
+            // Show "busy" status
             statusDot.classList.add('busy');
             statusText.textContent = 'Thinking...';
 
-            // Add "Thinking" bubble
+            // Add animated "Thinking" bubble
             const thinkingDiv = document.createElement('div');
             thinkingDiv.className = 'message assistant thinking-bubble';
             thinkingDiv.id = 'thinking-indicator';
@@ -467,6 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatContainer.appendChild(thinkingDiv);
             scrollToBottom();
         } else {
+            // Restore "ready" status
             statusDot.classList.remove('busy');
             statusText.textContent = 'Ready';
             userInput.focus();
@@ -479,7 +713,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Search History Functions
+    // =========================================================================
+    // LOCALSTORAGE PERSISTENCE
+    // =========================================================================
+    // Functions for saving/loading conversation history
+
+    /**
+     * Loads search history from localStorage.
+     * Returns empty array if nothing saved or on error.
+     * 
+     * @returns {Array} Array of conversation objects
+     */
     function loadSearchHistory() {
         try {
             const saved = localStorage.getItem('travelSearchHistory');
@@ -490,6 +734,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Saves current search history to localStorage.
+     */
     function saveSearchHistory() {
         try {
             localStorage.setItem('travelSearchHistory', JSON.stringify(searchHistory));
@@ -498,6 +745,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Updates the current conversation's messages in history.
+     */
     function saveCurrentConversation() {
         if (!currentConversationId) return;
 
@@ -508,12 +758,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Creates a new conversation entry in history.
+     * 
+     * @param {string} firstMessage - The first message (used as title)
+     */
     function addConversationToHistory(firstMessage) {
         const conversationItem = {
             id: currentConversationId,
+            // Truncate long messages for title
             title: firstMessage.length > 50 ? firstMessage.substring(0, 50) + '...' : firstMessage,
             timestamp: new Date().toISOString(),
-            messages: [] // Will be populated as we go
+            messages: []
         };
 
         // Add to beginning (most recent first)
@@ -528,17 +784,16 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHistory();
     }
 
-    function startNewConversation() {
-        // Clear current conversation
-        chatContainer.innerHTML = '';
-        chatContainer.classList.remove('has-messages');
-        // Restore welcome message if it was hidden via innerHTML clearing? 
-        // Wait, clearing innerHTML remvoes the welcome message div itself!
-        // I need to NOT clear the welcome message if I want it back, OR re-inject it.
-        // Actually, the welcome message is STATIC in HTML.
-        // If I do chatContainer.innerHTML = '', I delete the static welcome message.
-        // I should probably Restore it.
+    // =========================================================================
+    // CONVERSATION MANAGEMENT
+    // =========================================================================
 
+    /**
+     * Starts a fresh conversation.
+     * Clears the chat and resets state.
+     */
+    function startNewConversation() {
+        // Reset chat container with welcome message
         chatContainer.innerHTML = `
             <div class="welcome-message">
                 <div class="hero-text">
@@ -547,15 +802,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p class="subtitle">How can I help you explore the world today?</p>
             </div>
         `;
+        chatContainer.classList.remove('has-messages');
         currentConversationId = null;
         conversationMessages = [];
         userInput.value = '';
         userInput.focus();
 
-        // Remove active class from history
+        // Deselect any active history item
         document.querySelectorAll('.history-item').forEach(item => item.classList.remove('active'));
     }
 
+    /**
+     * Loads a conversation from history.
+     * Replays all messages to rebuild the UI.
+     * 
+     * @param {string} id - Conversation ID to load
+     */
     function loadConversation(id) {
         const conversation = searchHistory.find(c => c.id === id);
         if (!conversation) return;
@@ -563,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentConversationId = id;
         conversationMessages = conversation.messages || [];
 
-        // Clear and rebuild chat
+        // Reset chat with welcome message (hidden when has-messages)
         chatContainer.innerHTML = `
             <div class="welcome-message">
                 <div class="hero-text">
@@ -572,19 +834,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p class="subtitle">How can I help you explore the world today?</p>
             </div>
         `;
+
         if (conversationMessages.length > 0) {
             chatContainer.classList.add('has-messages');
         } else {
             chatContainer.classList.remove('has-messages');
         }
 
-        // Replay messages
+        // Replay messages to rebuild UI
         conversationMessages.forEach(msg => {
             if (msg.role === 'tool_call_ui') {
-                // Reconstruct tool call UI
+                // Reconstruct tool call display
                 const toolDiv = document.createElement('div');
                 toolDiv.className = 'tool-call';
-                // We don't need ID for history items really
 
                 const displayInfo = msg.displayInfo || getToolDisplayInfo(msg.name, msg.args);
 
@@ -604,22 +866,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Remove duplicate messages from state (appendMessage adds them again)
-        // Actually appendMessage adds to conversationMessages, so we should reset it before replaying
-        // But wait, appendMessage pushes to conversationMessages. 
-        // So if we loop and call appendMessage, we are doubling the array.
-        // Let's fix this by decoupling UI rendering from state update in appendMessage, 
-        // OR just reset conversationMessages after replaying?
-        // Better: make appendMessage NOT update state, handle state separately.
-        // But for now, let's just reset it to the loaded messages after replaying.
+        // Reset state to loaded messages (appendMessage adds duplicates)
         conversationMessages = conversation.messages || [];
 
         scrollToBottom();
         renderHistory();
     }
 
+    /**
+     * Deletes a conversation after confirmation.
+     * 
+     * @param {string} id - Conversation ID to delete
+     * @param {Event} event - Click event (for stopPropagation)
+     */
     function deleteConversation(id, event) {
-        event.stopPropagation(); // Prevent clicking the item
+        event.stopPropagation();
 
         showConfirmModal(
             'Delete Conversation',
@@ -629,6 +890,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveSearchHistory();
                 renderHistory();
 
+                // If deleting current conversation, start new
                 if (currentConversationId === id) {
                     startNewConversation();
                 }
@@ -636,6 +898,12 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    /**
+     * Renames a conversation.
+     * 
+     * @param {string} id - Conversation ID
+     * @param {string} newTitle - New title to set
+     */
     function renameConversation(id, newTitle) {
         const conversation = searchHistory.find(c => c.id === id);
         if (conversation) {
@@ -645,11 +913,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Toggles pin status of a conversation.
+     * Pinned conversations appear at the top.
+     * 
+     * @param {string} id - Conversation ID
+     */
     function togglePinConversation(id) {
         const conversation = searchHistory.find(c => c.id === id);
         if (conversation) {
             conversation.pinned = !conversation.pinned;
-            // Sort: pinned first, then by timestamp
+            // Re-sort: pinned first, then by timestamp
             searchHistory.sort((a, b) => {
                 if (a.pinned && !b.pinned) return -1;
                 if (!a.pinned && b.pinned) return 1;
@@ -660,6 +934,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // =========================================================================
+    // HISTORY SIDEBAR RENDERING
+    // =========================================================================
+
+    /**
+     * Renders the conversation history list in the sidebar.
+     * Creates clickable items with dropdown menus.
+     */
     function renderHistory() {
         if (searchHistory.length === 0) {
             historyList.innerHTML = '<div class="history-empty">No search history yet</div>';
@@ -671,12 +953,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
 
-            // Add active class if this is the current conversation
+            // Highlight active conversation
             if (conversation.id === currentConversationId) {
                 historyItem.classList.add('active');
             }
 
-            // Add pinned class if pinned
+            // Show pin indicator
             if (conversation.pinned) {
                 historyItem.classList.add('pinned');
             }
@@ -725,7 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // Click on item to load conversation
+            // Click item content to load conversation
             historyItem.querySelector('.history-item-content').addEventListener('click', () => {
                 loadConversation(conversation.id);
             });
@@ -735,18 +1017,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const dropdown = historyItem.querySelector('.history-dropdown');
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                // Close all other dropdowns first
+                // Close all other dropdowns
                 document.querySelectorAll('.history-dropdown').forEach(d => d.classList.add('hidden'));
 
-                // Position dropdown relative to button
+                // Position dropdown
                 const rect = menuBtn.getBoundingClientRect();
                 dropdown.style.top = `${rect.bottom + 4}px`;
-                dropdown.style.left = `${rect.left - 150}px`; // Offset to align right edge
+                dropdown.style.left = `${rect.left - 150}px`;
 
                 dropdown.classList.toggle('hidden');
             });
 
-            // Share button
+            // Share button handler
             historyItem.querySelector('.share-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 dropdown.classList.add('hidden');
@@ -759,14 +1041,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Pin button
+            // Pin button handler
             historyItem.querySelector('.pin-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 dropdown.classList.add('hidden');
                 togglePinConversation(conversation.id);
             });
 
-            // Rename button
+            // Rename button handler
             historyItem.querySelector('.rename-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 dropdown.classList.add('hidden');
@@ -775,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
 
-            // Delete button
+            // Delete button handler
             historyItem.querySelector('.delete-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 dropdown.classList.add('hidden');
@@ -791,6 +1073,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Formats a timestamp into a human-readable relative time.
+     * Examples: "Just now", "5m ago", "2h ago", "3d ago", or full date
+     * 
+     * @param {string} isoString - ISO 8601 date string
+     * @returns {string} Formatted time string
+     */
     function formatTimestamp(isoString) {
         const date = new Date(isoString);
         const now = new Date();
@@ -807,6 +1096,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return date.toLocaleDateString();
     }
 
+    // =========================================================================
+    // MODAL DIALOGS
+    // =========================================================================
+
+    /**
+     * Shows a confirmation modal with yes/no buttons.
+     * 
+     * @param {string} title - Modal title
+     * @param {string} message - Confirmation message
+     * @param {Function} onConfirm - Callback when user confirms
+     */
     function showConfirmModal(title, message, onConfirm) {
         const modal = document.getElementById('confirmation-modal');
         const modalTitle = document.getElementById('modal-title');
@@ -814,30 +1114,33 @@ document.addEventListener('DOMContentLoaded', () => {
         const confirmBtn = document.getElementById('modal-confirm');
         const cancelBtn = document.getElementById('modal-cancel');
 
-        if (!modal) return; // Safety check
+        if (!modal) return;
 
         modalTitle.textContent = title;
         modalMessage.textContent = message;
 
+        // Show modal with animation
         modal.classList.remove('hidden');
-        // Small delay to allow CSS transition
         requestAnimationFrame(() => {
             modal.classList.add('active');
         });
 
+        // Cleanup function to remove event listeners
         const cleanup = () => {
             confirmBtn.removeEventListener('click', handleConfirm);
             cancelBtn.removeEventListener('click', handleCancel);
         };
 
+        // Close modal with animation
         const closeModal = () => {
             modal.classList.remove('active');
             setTimeout(() => {
                 modal.classList.add('hidden');
-            }, 300); // Match CSS transition duration
+            }, 300);
             cleanup();
         };
 
+        // Handler functions
         const handleConfirm = () => {
             onConfirm();
             closeModal();
@@ -847,19 +1150,19 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal();
         };
 
-        // Ensure we don't stack listeners if function called multiple times?
-        // We use a cleanup function, but we need to make sure we remove PREVIOUS listeners if any exist?
-        // Actually, with the closure, creating new listeners every time is fine IF we cleanup correctly.
-        // But what if user clicks outside? 
-        // Let's keep it simple: Add listeners, remove on close.
-        // To be safe against double-binding if opened rapidly, maybe clone buttons? 
-        // No, simple remove is improved by `once: true` if possible, but we need closure access.
-
-        // Better implementation to avoid listener buildup:
+        // Attach handlers (using onclick to avoid listener buildup)
         confirmBtn.onclick = handleConfirm;
         cancelBtn.onclick = handleCancel;
     }
 
+    /**
+     * Shows an input modal for text entry.
+     * 
+     * @param {string} title - Modal title
+     * @param {string} placeholder - Input placeholder text
+     * @param {string} defaultValue - Initial input value
+     * @param {Function} onConfirm - Callback with entered value
+     */
     function showInputModal(title, placeholder, defaultValue, onConfirm) {
         const modal = document.getElementById('input-modal');
         const modalTitle = document.getElementById('input-modal-title');
@@ -873,6 +1176,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inputField.placeholder = placeholder;
         inputField.value = defaultValue || '';
 
+        // Show modal and focus input
         modal.classList.remove('hidden');
         requestAnimationFrame(() => {
             modal.classList.add('active');
@@ -899,6 +1203,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeModal();
         };
 
+        // Handle Enter/Escape keys
         const handleKeydown = (e) => {
             if (e.key === 'Enter') {
                 handleConfirm();
@@ -912,6 +1217,16 @@ document.addEventListener('DOMContentLoaded', () => {
         inputField.onkeydown = handleKeydown;
     }
 
+    // =========================================================================
+    // TOAST NOTIFICATIONS
+    // =========================================================================
+
+    /**
+     * Shows a temporary toast notification.
+     * Auto-hides after 3 seconds.
+     * 
+     * @param {string} message - Message to display
+     */
     function showToast(message) {
         const toast = document.getElementById('toast-notification');
         const toastMessage = document.getElementById('toast-message');
@@ -921,6 +1236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toastMessage.textContent = message;
         toast.classList.remove('hidden');
 
+        // Animate in
         requestAnimationFrame(() => {
             toast.classList.add('show');
         });
@@ -934,6 +1250,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
+    // =========================================================================
+    // UTILITY FUNCTIONS
+    // =========================================================================
+
+    /**
+     * Escapes HTML special characters to prevent XSS.
+     * 
+     * @param {string} text - Raw text to escape
+     * @returns {string} Escaped HTML-safe string
+     */
     function escapeHtml(text) {
         if (!text) return '';
         return text
