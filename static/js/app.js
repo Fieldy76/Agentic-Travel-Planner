@@ -19,14 +19,64 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize history display
     renderHistory();
 
+    const fileInput = document.getElementById('file-input');
+    // const attachBtn = document.querySelector('.attach-btn'); // Removed
+    let selectedFile = null;
+
     // Toggle history sidebar
     historyToggle.addEventListener('click', () => {
         historySidebar.classList.toggle('collapsed');
-        const chevron = historyToggle.querySelector('.chevron-icon');
-        if (historySidebar.classList.contains('collapsed')) {
-            chevron.style.transform = 'rotate(180deg)';
-        } else {
-            chevron.style.transform = 'rotate(0deg)';
+    });
+
+    const menuBtn = document.getElementById('attach-menu-btn');
+    const menu = document.getElementById('attachment-menu');
+
+    // Toggle Menu
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menu.classList.toggle('active');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !menuBtn.contains(e.target)) {
+            menu.classList.remove('active');
+        }
+    });
+
+    // Handle File Selection (Label triggers input, but we also want to close menu)
+    fileInput.addEventListener('click', () => {
+        menu.classList.remove('active');
+    });
+
+    // Extracted logic for UI Update
+    function updateFilePill(file) {
+        let existingPill = document.querySelector('.file-pill');
+        if (existingPill) existingPill.remove();
+
+        const pill = document.createElement('div');
+        pill.className = 'file-pill';
+        pill.innerHTML = `
+            <span class="file-name">${file.name}</span>
+            <button type="button" class="remove-file">×</button>
+        `;
+
+        chatForm.insertBefore(pill, userInput);
+
+        pill.querySelector('.remove-file').addEventListener('click', () => {
+            selectedFile = null;
+            if (fileInput) fileInput.value = '';
+            pill.remove();
+        });
+
+        userInput.focus();
+    }
+
+    // File Selection
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            selectedFile = e.target.files[0];
+            updateFilePill(selectedFile);
         }
     });
 
@@ -44,8 +94,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const message = userInput.value.trim();
+        let message = userInput.value.trim();
+
+        // Handle attachment text
+        if (selectedFile) {
+            message = `[Attached: ${selectedFile.name}] ${message}`.trim();
+            // Reset file input
+            selectedFile = null;
+            fileInput.value = '';
+            const pill = document.querySelector('.file-pill');
+            if (pill) pill.remove();
+        }
+
         if (!message || isProcessing) return;
+
+        // Switch UI to active conversation mode
+        chatContainer.classList.add('has-messages');
 
         // If starting a new conversation, create a history entry
         if (currentConversationId === null) {
@@ -272,7 +336,14 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingDiv.id = 'thinking-indicator';
             thinkingDiv.innerHTML = `
                 <div class="message-content">
-                    <span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+                    <div class="thinking-wrapper">
+                        <span class="thinking-text">Thinking</span>
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
                 </div>
             `;
             chatContainer.appendChild(thinkingDiv);
@@ -342,6 +413,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function startNewConversation() {
         // Clear current conversation
         chatContainer.innerHTML = '';
+        chatContainer.classList.remove('has-messages');
+        // Restore welcome message if it was hidden via innerHTML clearing? 
+        // Wait, clearing innerHTML remvoes the welcome message div itself!
+        // I need to NOT clear the welcome message if I want it back, OR re-inject it.
+        // Actually, the welcome message is STATIC in HTML.
+        // If I do chatContainer.innerHTML = '', I delete the static welcome message.
+        // I should probably Restore it.
+
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="hero-text">
+                    <span class="gradient-text">Hello, Traveler</span>
+                </div>
+                <p class="subtitle">How can I help you explore the world today?</p>
+            </div>
+        `;
         currentConversationId = null;
         conversationMessages = [];
         userInput.value = '';
@@ -359,7 +446,19 @@ document.addEventListener('DOMContentLoaded', () => {
         conversationMessages = conversation.messages || [];
 
         // Clear and rebuild chat
-        chatContainer.innerHTML = '';
+        chatContainer.innerHTML = `
+            <div class="welcome-message">
+                <div class="hero-text">
+                    <span class="gradient-text">Hello, Traveler</span>
+                </div>
+                <p class="subtitle">How can I help you explore the world today?</p>
+            </div>
+        `;
+        if (conversationMessages.length > 0) {
+            chatContainer.classList.add('has-messages');
+        } else {
+            chatContainer.classList.remove('has-messages');
+        }
 
         // Replay messages
         conversationMessages.forEach(msg => {

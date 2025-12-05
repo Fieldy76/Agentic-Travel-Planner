@@ -4,5 +4,6 @@ google-generativeai
 python-dotenv
 httpx
 pydantic
-flask
+fastapi
+uvicorn
 stripe>=8.0.0

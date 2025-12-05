@@ -31,11 +31,11 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 
 ### Production-Ready Features
 - **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
-- **✅ Pydantic Validation**: Strict type validation for all MCP protocol messages and tool inputs/outputs.
+- **✅ Pydantic Validation**: Strict type validation for all tools using Pydantic models.
+- **⚡ Async Architecture**: High-performance asynchronous execution using `asyncio` and `FastAPI`.
 - **🔄 Error Handling & Retries**: Exponential backoff retry logic for resilient tool execution.
 - **💾 State Management**: Abstract memory interface with in-memory implementation for conversation persistence.
-- **⚡ Performance Caching**: TTL-based caching for expensive API calls (flights, weather).
-- **🧪 Comprehensive Testing**: 9 unit and integration tests covering protocol validation, orchestrator logic, and full workflows.
+- **🧪 Comprehensive Testing**: Integration tests covering protocol validation, orchestrator logic, and full workflows.
 - **🐳 Docker Support**: Multi-stage Dockerfile with security best practices (non-root user).
 
 ## 🛠️ Installation
@@ -103,14 +103,14 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 ## 🏃 Usage
 
 ### Web Interface (Recommended)
-Start the Flask web server:
+Start the FastAPI web server using Uvicorn:
 ```bash
-python web_server.py
+uvicorn web_server:app --port 5000 --reload
 ```
 Open your browser and navigate to `http://localhost:5000`.
 
 ### Command Line Interface
-Start the CLI agent:
+Start the Async CLI agent:
 ```bash
 python travel_agent/cli.py
 ```
@@ -145,7 +145,7 @@ The web interface includes:
 - **✈️ Flexible Flight Booking**:
   - Accept multiple selection formats (flight codes, numbers, or natural language)
   - Clear confirmation messages with booking reference and details
-- **📊 Real-time Status**: Live updates as the agent processes tools
+- **📊 Real-time Status**: Live updates as the agent processes tools via server-sent events
 
 ## 🧪 Testing
 
@@ -166,23 +166,23 @@ python -m unittest discover tests -v
 ## 📂 Project Structure
 
 ```
-├── web_server.py           # Flask Web Server (Entry Point)
+├── web_server.py           # FastAPI Web Server (Entry Point)
 ├── static/                 # Frontend Assets
 │   ├── index.html
 │   ├── css/
 │   └── js/
 ├── travel_agent/
-│   ├── main.py             # CLI Entry point
+│   ├── cli.py              # CLI Entry point
 │   ├── config.py           # Configuration management
 │   ├── agent/
-│   │   ├── llm.py          # LLM Provider wrappers
-│   │   ├── orchestrator.py # Core agent logic
+│   │   ├── llm.py          # Async LLM Provider wrappers
+│   │   ├── orchestrator.py # Core Async Agent logic
 │   │   ├── memory.py       # Conversation memory
 │   │   └── cache.py        # Performance caching
 │   ├── mcp/
 │   │   ├── protocol.py     # MCP JSON-RPC definitions
-│   │   └── mcp_server.py   # MCP Server implementation
-│   └── tools/              # Tool implementations
+│   │   └── mcp_server.py   # Async MCP Server implementation
+│   └── tools/              # Async Tool implementations
 │       ├── flights.py
 │       ├── cars.py
 │       ├── weather.py
@@ -207,7 +207,7 @@ The Docker image uses a multi-stage build and runs as a non-root user for securi
 For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every line of code in this directory is commented to explain its purpose and functionality.
 
 - [Annotated Web Server](annotated/web_server.py)
-- [Annotated Main Entry Point](annotated/travel_agent/main.py)
+- [Annotated Main Entry Point](annotated/travel_agent/cli.py)
 - [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py)
 - [Annotated MCP Server](annotated/travel_agent/mcp/mcp_server.py)
 

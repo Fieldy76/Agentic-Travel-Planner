@@ -1,7 +1,8 @@
 from typing import List, Dict, Any, Optional
 import json
 import logging
-import time
+import asyncio
+from datetime import datetime
 from .llm import LLMProvider
 from ..mcp.mcp_server import MCPServer
 from .memory import AgentMemory, InMemoryMemory
@@ -98,8 +99,8 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
-    def run_generator(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop, yielding events."""
+    async def run_generator(self, user_input: str, request_id: str = "default"):
+        """Run one turn of the agent loop, yielding events (Async Generator)."""
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
         # Add user message to memory
@@ -118,18 +119,19 @@ Be brief and efficient."""
             # 2. Call LLM with current date/time context
             logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
             
-            # Inject current date/time into system prompt
-            from datetime import datetime
             now = datetime.now()
             current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
             current_date = now.strftime("%Y-%m-%d")
             
             enhanced_system_prompt = f"""{self.system_prompt}
 
-IMPORTANT CONTEXT:
-- Current date and time: {current_datetime}
-- Today's date: {current_date}
-- When users ask about "today", "now", or relative dates, use this information.
+CRITICAL DATE CONTEXT:
+- TODAY'S DATE: {current_date} ({now.strftime('%A')})
+- If the user provides a date without a year (e.g., "Jan 30", "8 feb"), you MUST assume the NEXT occurrence of that date relative to today.
+  * Example: If today is 2025-12-05 and user says "Jan 30", interpret as 2026-01-30.
+  * Example: If today is 2025-01-01 and user says "Mar 5", interpret as 2025-03-05.
+- Handle month abbreviations and typos intelligently (e.g., "fab" -> "feb", "sept" -> "sep").
+- DO NOT ask for the year if it can be inferred from the rules above.
 """
             
             # Construct full history with enhanced system prompt
@@ -140,7 +142,7 @@ IMPORTANT CONTEXT:
             
             for attempt in range(max_llm_retries):
                 try:
-                    response = self.llm.call_tool(messages, tools)
+                    response = await self.llm.call_tool(messages, tools)
                     break
                 except Exception as e:
                     logger.warning(f"LLM call failed (attempt {attempt+1}/{max_llm_retries}): {e}", extra={"request_id": request_id})
@@ -148,7 +150,7 @@ IMPORTANT CONTEXT:
                         logger.error(f"LLM error after {max_llm_retries} attempts: {e}")
                         yield {"type": "error", "content": f"I'm having trouble connecting to my brain right now. Error: {str(e)}"}
                         return # Stop generator
-                    time.sleep(1) # Wait before retry
+                    await asyncio.sleep(1) # Wait before retry (async sleep)
             
             if not response:
                 break
@@ -194,7 +196,7 @@ IMPORTANT CONTEXT:
                 
                 for attempt in range(max_retries):
                     try:
-                        result = self.server.call_tool(tool_name, tool_args)
+                        result = await self.server.call_tool(tool_name, tool_args)
                         result_text = result.content[0]["text"]
                         is_error = result.isError
                         break # Success
@@ -204,7 +206,7 @@ IMPORTANT CONTEXT:
                             result_text = f"Error executing tool {tool_name}: {str(e)}"
                             is_error = True
                         else:
-                            time.sleep(1 * (attempt + 1)) # Exponential backoff
+                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff (async)
                 
                 logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
                 yield {"type": "tool_result", "name": tool_name, "content": result_text, "is_error": is_error}
@@ -217,9 +219,9 @@ IMPORTANT CONTEXT:
                     "content": result_text
                 })
 
-    def run(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop (synchronous wrapper for CLI)."""
-        for event in self.run_generator(user_input, request_id):
+    async def run(self, user_input: str, request_id: str = "default"):
+        """Run one turn of the agent loop (async wrapper for CIL/Testing)."""
+        async for event in self.run_generator(user_input, request_id):
             if event["type"] == "message":
                 print(f"Agent: {event['content']}")
             elif event["type"] == "tool_call":

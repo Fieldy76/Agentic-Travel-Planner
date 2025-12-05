@@ -1,14 +1,25 @@
 import random
 import httpx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 from ..agent.cache import global_tool_cache
 from ..config import Config
 
 # Global variable to cache Amadeus access token
 _amadeus_token_cache = {"token": None, "expires_at": 0}
 
-def _get_amadeus_token() -> str:
-    """Get OAuth access token for Amadeus API."""
+class FlightSearchArgs(BaseModel):
+    origin: str = Field(..., description="Three-letter airport code (e.g., JFK).")
+    destination: str = Field(..., description="Three-letter airport code (e.g., LHR).")
+    date: str = Field(..., description="Date of travel (YYYY-MM-DD).")
+
+class BookFlightArgs(BaseModel):
+    flight_id: str = Field(..., description="The ID of the flight to book.")
+    passenger_name: str = Field(..., description="Full name of the passenger.")
+    passport_number: str = Field(..., description="Passport number of the passenger.")
+
+async def _get_amadeus_token() -> str:
+    """Get OAuth access token for Amadeus API (Async)."""
     import time
     
     # Check if cached token is still valid
@@ -23,38 +34,35 @@ def _get_amadeus_token() -> str:
         "client_secret": Config.FLIGHT_API_SECRET
     }
     
-    response = httpx.post(url, data=data, timeout=10.0)
-    response.raise_for_status()
-    
-    token_data = response.json()
-    _amadeus_token_cache["token"] = token_data["access_token"]
-    _amadeus_token_cache["expires_at"] = time.time() + token_data.get("expires_in", 1800) - 60
-    
-    return _amadeus_token_cache["token"]
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, data=data, timeout=10.0)
+        response.raise_for_status()
+        
+        token_data = response.json()
+        _amadeus_token_cache["token"] = token_data["access_token"]
+        _amadeus_token_cache["expires_at"] = time.time() + token_data.get("expires_in", 1800) - 60
+        
+        return _amadeus_token_cache["token"]
 
-@global_tool_cache.cached
-def search_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
+# Note: Cache decorator needs to support async or be removed for async functions
+# For now, we remove the sync cache decorator and will reimplement async cache later if needed
+async def search_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
     """
     Search for flights between origin and destination on a specific date.
-    
-    Args:
-        origin: Three-letter airport code (e.g., JFK).
-        destination: Three-letter airport code (e.g., LHR).
-        date: Date of travel (YYYY-MM-DD).
     """
     # Try to use real API if configured
     if Config.FLIGHT_API_KEY and Config.FLIGHT_API_SECRET:
         try:
-            return _search_real_flights(origin, destination, date)
+            return await _search_real_flights(origin, destination, date)
         except Exception as e:
             print(f"[WARNING] Amadeus API failed: {e}. Falling back to mock data.")
     
     # Fallback to mock data
-    return _search_mock_flights(origin, destination, date)
+    return await _search_mock_flights(origin, destination, date)
 
-def _search_real_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
-    """Search for real flights using Amadeus API."""
-    token = _get_amadeus_token()
+async def _search_real_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
+    """Search for real flights using Amadeus API (Async)."""
+    token = await _get_amadeus_token()
     
     url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
     headers = {"Authorization": f"Bearer {token}"}
@@ -66,10 +74,11 @@ def _search_real_flights(origin: str, destination: str, date: str) -> List[Dict[
         "max": 5  # Limit results
     }
     
-    response = httpx.get(url, headers=headers, params=params, timeout=15.0)
-    response.raise_for_status()
-    
-    data = response.json()
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers, params=params, timeout=15.0)
+        response.raise_for_status()
+        data = response.json()
+
     offers = data.get("data", [])
     
     # Airline Code Map (Shared with mock)
@@ -115,8 +124,8 @@ def _search_real_flights(origin: str, destination: str, date: str) -> List[Dict[
     
     return results
 
-def _search_mock_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
-    """Generate mock flight search results."""
+async def _search_mock_flights(origin: str, destination: str, date: str) -> List[Dict[str, Any]]:
+    """Generate mock flight search results (Async wrapper)."""
     print(f"[MOCK] Searching flights from {origin} to {destination} on {date}")
     
     # Mock airline data
@@ -150,14 +159,8 @@ def _search_mock_flights(origin: str, destination: str, date: str) -> List[Dict[
         currency = "JPY"
         price_multiplier = 150.0
     
-    # Simulate "No flights found" for specific date/route to test alternatives
-    # For demo purposes, let's say flights on the 25th are sold out if origin is "NOW" (No Way)
     if origin.upper() == "NOW":
         print(f"[MOCK] No flights found for {origin} -> {destination} on {date}. Generating alternatives.")
-        # Return empty list to trigger agent's alternative logic, 
-        # OR return alternatives directly with a flag. 
-        # Let's return alternatives for a different date.
-        
         alt_date = f"{date[:-2]}{int(date[-2:]) + 1:02d}" # Next day
         for _ in range(2):
             code = random.choice(airlines_codes)
@@ -202,19 +205,12 @@ def _search_mock_flights(origin: str, destination: str, date: str) -> List[Dict[
         
     return results
 
-def book_flight(flight_id: str, passenger_name: str, passport_number: str) -> Dict[str, Any]:
+async def book_flight(flight_id: str, passenger_name: str, passport_number: str) -> Dict[str, Any]:
     """
     Book a specific flight for a passenger.
-    
-    Args:
-        flight_id: The ID of the flight to book.
-        passenger_name: Full name of the passenger.
-        passport_number: Passport number of the passenger.
     """
     print(f"[MOCK] Booking flight {flight_id} for {passenger_name}")
     
-    # Note: Amadeus booking requires more complex flow with pricing confirmation
-    # This remains as mock for now
     return {
         "status": "confirmed",
         "booking_reference": f"BK{random.randint(10000, 99999)}",

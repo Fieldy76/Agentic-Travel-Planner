@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,7 +23,7 @@ from travel_agent.tools import (
     get_current_datetime
 )
 
-def main():
+async def main():
     # 1. Validate Config
     if not Config.validate():
         return
@@ -44,6 +45,7 @@ def main():
         return
 
     try:
+        # LLM Provider is now Async
         llm = get_llm_provider(provider_name, api_key)
     except ImportError as e:
         print(f"Error initializing LLM: {e}")
@@ -67,11 +69,14 @@ def main():
     # 5. Interaction Loop
     while True:
         try:
+            # Note: input() is blocking but acceptable for CLI demo
+            # For true non-blocking CLI, one would use aioconsole
             user_input = input("\nYou: ")
             if user_input.lower() in ["quit", "exit"]:
                 break
                 
-            agent.run(user_input)
+            # Run async agent
+            await agent.run(user_input)
             
         except KeyboardInterrupt:
             break
@@ -79,4 +84,4 @@ def main():
             print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
