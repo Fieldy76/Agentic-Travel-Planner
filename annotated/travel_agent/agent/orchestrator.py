@@ -1,25 +1,185 @@
-from typing import List, Dict, Any, Optional
-import json
-import logging
-import asyncio
-from datetime import datetime
-import io
-import pypdf
-import docx
-from .llm import LLMProvider
-from ..mcp.mcp_server import MCPServer
-from .memory import AgentMemory, InMemoryMemory
-from ..config import setup_logging
+"""
+================================================================================
+AGENT ORCHESTRATOR - The Brain of the Agentic Travel Planner
+================================================================================
 
-# Ensure logging is configured
+This module implements the AgentOrchestrator, the central component that 
+coordinates interactions between the LLM (language model) and tools. It 
+manages the agentic loop where the LLM reasons about user input, decides
+which tools to use, executes them, and formulates responses.
+
+Core Responsibilities:
+----------------------
+1. Conversation Management: Maintains message history using AgentMemory
+2. Document Processing: Extracts text from PDFs, DOCX, and text files
+3. Tool Orchestration: Executes tools and feeds results back to the LLM
+4. Error Handling: Retries failed LLM/tool calls with exponential backoff
+5. Date Context: Injects current date/time into system prompts
+
+Agentic Loop Architecture:
+--------------------------
+The orchestrator implements a ReAct-style (Reasoning + Acting) loop:
+
+    ┌───────────────────────────────────────────────────┐
+    │                   User Input                      │
+    └────────────────────┬──────────────────────────────┘
+                         │
+                         ▼
+    ┌───────────────────────────────────────────────────┐
+    │              Add to Memory                        │
+    │        (Store user message in history)            │
+    └────────────────────┬──────────────────────────────┘
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+          │              ▼              │
+          │  ┌───────────────────────┐  │
+          │  │     LLM Reasoning     │  │
+          │  │   (What should I do?) │  │
+          │  └──────────┬────────────┘  │
+          │             │               │
+          │      ┌──────┴──────┐       │
+          │      ▼             ▼       │
+          │   TEXT          TOOL       │
+          │  RESPONSE       CALLS      │
+          │      │             │       │
+          │      │      ┌──────┴─────┐ │
+          │      │      ▼            │ │
+          │      │  ┌────────────┐   │ │
+          │      │  │  Execute   │   │ │
+          │      │  │   Tools    │   │ │
+          │      │  └─────┬──────┘   │ │
+          │      │        │          │ │
+          │      │        ▼          │ │
+          │      │  Store Results   └─┤ (Loop back to LLM)
+          │      │   in Memory        │
+          │      │                    │
+          └──────┴────────────────────┘
+                         │
+                         ▼
+    ┌───────────────────────────────────────────────────┐
+    │              Final Response                       │
+    │         (No more tool calls needed)               │
+    └───────────────────────────────────────────────────┘
+
+Streaming Architecture:
+-----------------------
+The run_generator() method is an async generator that yields events:
+- {"type": "message", "content": "..."}: Text from LLM
+- {"type": "tool_call", "name": "...", "arguments": {...}}: Tool invocation
+- {"type": "tool_result", "name": "...", "content": "..."}: Tool output
+- {"type": "error", "content": "..."}: Error condition
+
+This allows real-time UI updates as the agent "thinks" and acts.
+
+System Prompt Design:
+---------------------
+The system prompt is extensive and includes:
+- Language consistency rules (respond in user's language)
+- Date handling instructions
+- Booking workflow rules
+- Formatting requirements (no bold, use numbered lists)
+- Multi-passenger pricing logic
+- Flight selection validation
+
+Author: Agentic Travel Planner Team
+================================================================================
+"""
+
+# =============================================================================
+# IMPORTS
+# =============================================================================
+
+from typing import List, Dict, Any, Optional  # Type hints
+import json                                   # JSON serialization
+import logging                                # Logging facility
+import asyncio                                # Async/await support
+from datetime import datetime                 # Date/time handling
+import io                                     # In-memory file handling
+
+# Document parsing libraries
+import pypdf   # PDF text extraction
+import docx    # DOCX (Word) document parsing
+
+# Local imports
+from .llm import LLMProvider                  # LLM provider interface
+from ..mcp.mcp_server import MCPServer        # Tool server
+from .memory import AgentMemory, InMemoryMemory  # Conversation memory
+from ..config import setup_logging            # JSON logging configuration
+
+# =============================================================================
+# LOGGING SETUP
+# =============================================================================
+
+# Ensure structured JSON logging is configured
 setup_logging()
+
+# Create a module-specific logger
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# AGENT ORCHESTRATOR CLASS
+# =============================================================================
+
 class AgentOrchestrator:
+    """
+    The central orchestrator that coordinates LLM reasoning with tool execution.
+    
+    This class implements the agentic loop pattern where the LLM can:
+    1. Reason about the user's request
+    2. Decide which tools to call (if any)
+    3. Execute tools and observe results
+    4. Continue reasoning based on tool outputs
+    5. Provide a final response
+    
+    The orchestrator manages:
+    - LLM calls with retry logic
+    - Tool execution with error handling
+    - Conversation memory for context
+    - Document processing for file uploads
+    
+    Attributes:
+        llm (LLMProvider): The language model provider
+        server (MCPServer): The tool server with registered tools
+        memory (AgentMemory): Conversation history storage
+        system_prompt (str): The system instructions for the LLM
+    
+    Example:
+        >>> llm = get_llm_provider("openai", "sk-...")
+        >>> server = MCPServer()
+        >>> server.register_tool(search_flights)
+        >>> 
+        >>> agent = AgentOrchestrator(llm, server)
+        >>> 
+        >>> async for event in agent.run_generator("Find flights to NYC"):
+        ...     print(event)
+    """
+    
     def __init__(self, llm: LLMProvider, server: MCPServer, memory: Optional[AgentMemory] = None):
+        """
+        Initialize the AgentOrchestrator.
+        
+        Args:
+            llm: LLM provider instance (OpenAI, Anthropic, or Google)
+            server: MCP Server with registered tools
+            memory: Optional memory implementation. Defaults to InMemoryMemory.
+                   Can be replaced with persistent storage for production.
+        """
         self.llm = llm
         self.server = server
+        # Use provided memory or default to in-memory storage
         self.memory = memory or InMemoryMemory()
+        
+        # =====================================================================
+        # SYSTEM PROMPT - The Agent's "Personality" and Rules
+        # =====================================================================
+        # This comprehensive prompt guides the LLM's behavior as a travel agent.
+        # It includes:
+        # - Language handling rules
+        # - Date format requirements
+        # - Booking workflow steps
+        # - Formatting guidelines
+        # - Multi-passenger pricing logic
         self.system_prompt = """You are a helpful travel assistant. Guide users through booking trips step-by-step.
 
 LANGUAGE CONSISTENCY (HIGHEST PRIORITY):
@@ -139,16 +299,49 @@ WORKFLOW RULES:
 Be brief and efficient."""
 
     async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
-        """Run one turn of the agent loop, yielding events (Async Generator)."""
+        """
+        Run one turn of the agent loop, yielding events as an async generator.
+        
+        This is the main entry point for processing user input. It implements
+        a multi-turn loop where the LLM can make multiple tool calls before
+        providing a final response.
+        
+        Args:
+            user_input: The user's message text
+            file_data: Optional file content as bytes (for uploads)
+            mime_type: MIME type of the uploaded file
+            request_id: Unique identifier for request tracing in logs
+        
+        Yields:
+            dict: Event dictionaries with the following types:
+                - {"type": "message", "content": str}: LLM text response
+                - {"type": "tool_call", "name": str, "arguments": dict}: Tool invocation
+                - {"type": "tool_result", "name": str, "content": str, "is_error": bool}: Tool output
+                - {"type": "error", "content": str}: Error condition
+        
+        Implementation Notes:
+            - Maximum of 10 turns to prevent infinite loops
+            - Retries LLM calls up to 3 times with 1-second delays
+            - Retries tool calls up to 3 times with exponential backoff
+            - Documents (PDF, DOCX, TXT) are extracted server-side
+            - Images are passed directly to the LLM for multimodal processing
+        """
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
         
-        # New Logic: Server-side text extraction for documents
+        # =====================================================================
+        # STEP 1: Document Processing (Server-Side Text Extraction)
+        # =====================================================================
+        # For documents like PDFs and Word files, we extract the text content
+        # server-side and append it to the user's message. This is more reliable
+        # than relying on the LLM to process raw document bytes.
+        
         extracted_text = ""
         is_document = False
         
         if file_data and mime_type:
             try:
                 if mime_type == "application/pdf":
+                    # Extract text from PDF using pypdf
                     is_document = True
                     pdf_reader = pypdf.PdfReader(io.BytesIO(file_data))
                     for page in pdf_reader.pages:
@@ -156,23 +349,26 @@ Be brief and efficient."""
                     logger.info(f"Extracted {len(extracted_text)} chars from PDF")
                     
                 elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    # Extract text from DOCX using python-docx
                     is_document = True
                     doc = docx.Document(io.BytesIO(file_data))
                     extracted_text = "\n".join([para.text for para in doc.paragraphs])
                     logger.info(f"Extracted {len(extracted_text)} chars from DOCX")
                     
                 elif mime_type == "text/plain":
+                    # Plain text files - just decode
                     is_document = True
                     extracted_text = file_data.decode("utf-8", errors="ignore")
                     logger.info(f"Extracted {len(extracted_text)} chars from TXT")
+                    
             except Exception as e:
                 logger.error(f"Error extracting text from {mime_type}: {e}")
-                # Fallback: let it pass through (might fail at LLM level but we tried)
+                # Fallback: let it pass through (might fail at LLM level)
         
-        # If we successfully extracted text, append it to user input and REMOVE the file blob
-        # This prevents the "unsupported mime type" error from Gemini
+        # If we extracted text, append it to the user input with clear markers
+        # This helps the LLM understand that this is attached document content
         if is_document and extracted_text:
-            # Wrap content in a block that explicitly tells LLM to treat it as data, not conversation context
+            # Wrap content with clear delimiters and instructions
             user_input += f"""
             
 ----- [SYSTEM: ATTACHED DOCUMENT START] -----
@@ -186,35 +382,55 @@ CONTENT:
 {extracted_text}
 ----- [SYSTEM: ATTACHED DOCUMENT END] -----
 """
+            # Clear file data since we've extracted the text
             file_data = None
             mime_type = None
             
-        # Construct user message with potential file attachment
+        # =====================================================================
+        # STEP 2: Construct User Message and Add to Memory
+        # =====================================================================
+        
+        # Build the message payload
         message_payload = {"role": "user", "content": user_input}
+        
+        # For non-document files (images), attach the raw data
+        # The LLM provider will handle multimodal processing
         if file_data and mime_type:
             message_payload["files"] = [{"mime_type": mime_type, "data": file_data}]
             logger.info(f"Processing attachment: {mime_type} ({len(file_data)} bytes)")
         
-        # Add user message to memory
+        # Add the user message to conversation history
         self.memory.add_message(message_payload)
         
-        # Main Loop - Increased to 10 to handle multi-step flows like booking
-        max_turns = 10
+        # =====================================================================
+        # STEP 3: Main Agent Loop
+        # =====================================================================
+        # The agent can make multiple tool calls before providing a final response.
+        # We limit this to 10 turns to prevent infinite loops.
+        
+        max_turns = 10  # Safety limit to prevent runaway loops
         current_turn = 0
         
         while current_turn < max_turns:
             current_turn += 1
             
-            # 1. Get available tools
+            # -----------------------------------------------------------------
+            # 3.1: Get available tools from the MCP Server
+            # -----------------------------------------------------------------
             tools = self.server.list_tools()
             
-            # 2. Call LLM with current date/time context
+            # -----------------------------------------------------------------
+            # 3.2: Build messages with enhanced system prompt
+            # -----------------------------------------------------------------
             logger.info("Calling LLM", extra={"request_id": request_id, "turn": current_turn})
             
+            # Get current date/time for context
             now = datetime.now()
             current_datetime = now.strftime("%Y-%m-%d %H:%M:%S")
             current_date = now.strftime("%Y-%m-%d")
             
+            # Enhance system prompt with current date context
+            # This helps the LLM handle relative dates ("tomorrow", "next week")
             enhanced_system_prompt = f"""{self.system_prompt}
 
 CRITICAL DATE CONTEXT:
@@ -227,62 +443,73 @@ CRITICAL DATE CONTEXT:
 - If user says "10 jan" and today is Dec 2025, just use 2026-01-10. Do not confirm the year.
 """
             
-            # Construct full history with enhanced system prompt
+            # Construct full message history with system prompt
             messages = [{"role": "system", "content": enhanced_system_prompt}] + self.memory.get_messages()
-            # 2. Get LLM Response with Retry Logic
+            
+            # -----------------------------------------------------------------
+            # 3.3: Call LLM with retry logic
+            # -----------------------------------------------------------------
             response = None
             max_llm_retries = 3
             
             for attempt in range(max_llm_retries):
                 try:
                     response = await self.llm.call_tool(messages, tools)
-                    break
+                    break  # Success - exit retry loop
                 except Exception as e:
                     logger.warning(f"LLM call failed (attempt {attempt+1}/{max_llm_retries}): {e}", extra={"request_id": request_id})
                     if attempt == max_llm_retries - 1:
+                        # All retries exhausted
                         logger.error(f"LLM error after {max_llm_retries} attempts: {e}")
                         yield {"type": "error", "content": f"I'm having trouble connecting to my brain right now. Error: {str(e)}"}
-                        return # Stop generator
-                    await asyncio.sleep(1) # Wait before retry (async sleep)
+                        return  # Stop generator
+                    await asyncio.sleep(1)  # Wait before retry
             
             if not response:
-                break
-
+                break  # Safety check
             
+            # -----------------------------------------------------------------
+            # 3.4: Process LLM response
+            # -----------------------------------------------------------------
             content = response.get("content")
             tool_calls = response.get("tool_calls")
             
-            # Add assistant message to memory if there is content OR tool calls
+            # Add assistant message to memory if there's content or tool calls
             if content or tool_calls:
-                # Log content if present
+                # Log response summary
                 if content:
                     logger.info(f"Agent response: {content[:50]}...", extra={"request_id": request_id})
                 
+                # Store in memory for context in subsequent turns
                 self.memory.add_message({
                     "role": "assistant", 
                     "content": content,
                     "tool_calls": tool_calls
                 })
                 
-                # Only yield message event if there is actual text content
+                # Yield text content to the client (only if present)
                 if content:
                     yield {"type": "message", "content": content}
                 
+            # Check if we're done (no more tool calls)
             if not tool_calls:
-                # No more tools to call, we are done with this turn
                 logger.info("No tool calls, turn complete", extra={"request_id": request_id})
                 break
                 
-            # 3. Execute Tools
+            # -----------------------------------------------------------------
+            # 3.5: Execute tool calls
+            # -----------------------------------------------------------------
             for tool_call in tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["arguments"]
                 tool_id = tool_call["id"]
                 
                 logger.info(f"Executing tool: {tool_name}", extra={"request_id": request_id, "tool_args": tool_args})
+                
+                # Notify client that we're calling a tool
                 yield {"type": "tool_call", "name": tool_name, "arguments": tool_args}
                 
-                # Retry logic
+                # Execute tool with retry logic and exponential backoff
                 max_retries = 3
                 result_text = ""
                 is_error = False
@@ -292,19 +519,22 @@ CRITICAL DATE CONTEXT:
                         result = await self.server.call_tool(tool_name, tool_args)
                         result_text = result.content[0]["text"]
                         is_error = result.isError
-                        break # Success
+                        break  # Success
                     except Exception as e:
                         logger.warning(f"Tool execution failed (attempt {attempt+1}/{max_retries}): {e}", extra={"request_id": request_id})
                         if attempt == max_retries - 1:
                             result_text = f"Error executing tool {tool_name}: {str(e)}"
                             is_error = True
                         else:
-                            await asyncio.sleep(1 * (attempt + 1)) # Exponential backoff (async)
+                            # Exponential backoff: 1s, 2s, 3s
+                            await asyncio.sleep(1 * (attempt + 1))
                 
                 logger.info(f"Tool result: {result_text[:50]}...", extra={"request_id": request_id, "is_error": is_error})
+                
+                # Yield tool result to client
                 yield {"type": "tool_result", "name": tool_name, "content": result_text, "is_error": is_error}
                 
-                # Append standard tool result message
+                # Add tool result to memory for LLM context
                 self.memory.add_message({
                     "role": "tool",
                     "tool_call_id": tool_id,
@@ -313,7 +543,24 @@ CRITICAL DATE CONTEXT:
                 })
 
     async def run(self, user_input: str, request_id: str = "default"):
-        """Run one turn of the agent loop (async wrapper for CIL/Testing)."""
+        """
+        Run one turn of the agent loop with console output.
+        
+        This is a convenience wrapper around run_generator() for CLI usage.
+        It consumes all events and prints them to the console.
+        
+        Args:
+            user_input: The user's message text
+            request_id: Unique identifier for request tracing
+        
+        Example:
+            >>> agent = AgentOrchestrator(llm, server)
+            >>> await agent.run("Find flights to NYC")
+            Agent: I'll search for flights to NYC...
+            Calling Tool: search_flights with {'origin': '...', 'destination': 'NYC'}
+            Tool Result: [flight data]
+            Agent: I found 3 flights...
+        """
         async for event in self.run_generator(user_input, request_id):
             if event["type"] == "message":
                 print(f"Agent: {event['content']}")
