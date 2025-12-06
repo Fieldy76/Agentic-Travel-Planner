@@ -24,6 +24,7 @@ Security Features:
 2. Server-side processing: Secret key never exposed to client
 3. Comprehensive error handling: Graceful failure modes
 4. Webhook support (optional): For handling async payment events
+5. Email Receipts: Automatic confirmation emails via Stripe when customer_email is provided
 
 Payment Flow:
 -------------

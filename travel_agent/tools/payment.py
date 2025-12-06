@@ -5,6 +5,7 @@ This module implements secure payment processing with:
 - Stripe Payment Intents API
 - Idempotency for payment safety
 - Comprehensive error handling
+- Email receipts via customer_email parameter
 - Automatic fallback to mock in development
 """
 

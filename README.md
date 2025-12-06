@@ -25,6 +25,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     - ☀️ **Weather Forecast**: Automatically fetched with flight searches.
     - 💳 **Payments**: Production-ready Stripe integration with automatic fallback to mock.
         - **Auto-Payment**: Automatically processes payment after booking.
+        - **📧 Email Confirmation**: Sends booking confirmation receipt to customer's email via Stripe.
     - 📅 **Relative Date Handling**: Natural language date support ("tomorrow", "in 2 days", "next week").
 - **Interactive CLI & Web UI**: Interact with the agent via a simple terminal interface or a modern, polished Web UI.
 - **🌍 Multi-Language Support**: Agent responds in the same language you write in (Italian, Spanish, French, German, etc.).

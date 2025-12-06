@@ -78,6 +78,7 @@ The system prompt is extensive and includes:
 - Language consistency rules (respond in user's language)
 - Date handling instructions
 - Booking workflow rules
+- Email collection for booking confirmation receipts
 - Formatting requirements (no bold, use numbered lists)
 - Multi-passenger pricing logic
 - Flight selection validation
