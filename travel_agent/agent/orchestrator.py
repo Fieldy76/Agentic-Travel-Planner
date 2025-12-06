@@ -119,9 +119,11 @@ WORKFLOW RULES:
 
 6. BOOKING & PAYMENT:
    - Accept flight selection in any format (code, number, "first one", etc.)
-   - After booking flight(s), AUTOMATICALLY process payment
+   - BEFORE processing payment, ASK for the customer's email address to send the booking confirmation
+   - Pass the email to process_payment using the customer_email parameter
+   - After booking flight(s), process payment with the provided email
    - Calculate total from flight prices x number of passengers
-   - Confirm booking AND payment together
+   - Confirm booking AND payment together, mentioning that confirmation was sent to their email
 
 7. FLIGHT SELECTION VALIDATION (CRITICAL - NEVER VIOLATE):
    - ONLY use flight codes that appeared in the ACTUAL search results
