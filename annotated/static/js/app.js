@@ -287,7 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Creates and displays a file pill showing the selected file.
-     * The pill includes a remove button to deselect the file.
+     * Shows thumbnail preview for images, file type icons for documents.
      * 
      * @param {File} file - The selected file object
      */
@@ -299,22 +299,108 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create new pill element
         const pill = document.createElement('div');
         pill.className = 'file-pill';
-        pill.innerHTML = `
-            <span class="file-name">${file.name}</span>
-            <button type="button" class="remove-file">×</button>
-        `;
+
+        // Determine file type and create appropriate preview
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(fileExtension);
+
+        // Get file type icon based on extension
+        const getFileIcon = (ext) => {
+            const icons = {
+                // PDF - red document icon
+                'pdf': `<svg class="file-type-icon pdf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <text x="8" y="17" font-size="6" fill="currentColor" stroke="none">PDF</text>
+                </svg>`,
+                // Word documents - blue document icon
+                'docx': `<svg class="file-type-icon doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>`,
+                'doc': `<svg class="file-type-icon doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>`,
+                // Text files - simple document icon
+                'txt': `<svg class="file-type-icon txt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>`,
+                // Default file icon
+                'default': `<svg class="file-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>`
+            };
+            return icons[ext] || icons['default'];
+        };
+
+        if (isImage) {
+            // Create thumbnail preview for images
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pill.innerHTML = `
+                    <div class="file-preview">
+                        <img src="${e.target.result}" alt="${file.name}" class="file-thumbnail">
+                    </div>
+                    <span class="file-name">${file.name}</span>
+                    <button type="button" class="remove-file">×</button>
+                `;
+                // Re-attach remove button listener after innerHTML update
+                attachRemoveListener(pill);
+            };
+            reader.readAsDataURL(file);
+
+            // Show loading state while reading
+            pill.innerHTML = `
+                <div class="file-preview loading">
+                    <div class="thumbnail-loader"></div>
+                </div>
+                <span class="file-name">${file.name}</span>
+                <button type="button" class="remove-file">×</button>
+            `;
+        } else {
+            // Show file type icon for documents
+            pill.innerHTML = `
+                <div class="file-preview">
+                    ${getFileIcon(fileExtension)}
+                </div>
+                <span class="file-name">${file.name}</span>
+                <button type="button" class="remove-file">×</button>
+            `;
+        }
 
         // Insert before the text input
         chatForm.insertBefore(pill, userInput);
 
-        // Handle remove button click
-        pill.querySelector('.remove-file').addEventListener('click', () => {
-            selectedFile = null;
-            if (fileInput) fileInput.value = '';
-            pill.remove();
-        });
+        // Attach remove button listener
+        attachRemoveListener(pill);
 
         userInput.focus();
+    }
+
+    /**
+     * Attaches the remove button click handler to a file pill.
+     * Extracted as helper since we may need to re-attach after async image load.
+     * 
+     * @param {HTMLElement} pill - The file pill element
+     */
+    function attachRemoveListener(pill) {
+        const removeBtn = pill.querySelector('.remove-file');
+        if (removeBtn) {
+            removeBtn.onclick = () => {
+                selectedFile = null;
+                if (fileInput) fileInput.value = '';
+                pill.remove();
+            };
+        }
     }
 
     // Handle file selection

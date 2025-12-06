@@ -471,7 +471,7 @@ body {
 .file-pill {
     background: #e3f2fd;
     color: #0b57d0;
-    padding: 0.25rem 0.75rem;
+    padding: 0.35rem 0.75rem 0.35rem 0.35rem;
     border-radius: 1rem;
     font-size: 0.85rem;
     display: flex;
@@ -479,6 +479,70 @@ body {
     gap: 0.5rem;
     margin-right: 0.5rem;
     white-space: nowrap;
+    max-width: 220px;
+}
+
+/* File preview container (thumbnail or icon) */
+.file-preview {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.5);
+    flex-shrink: 0;
+}
+
+/* Image thumbnail */
+.file-thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+/* File type icon styling */
+.file-type-icon {
+    width: 24px;
+    height: 24px;
+    color: #5f6368;
+}
+
+/* PDF icon - red accent */
+.file-type-icon.pdf {
+    color: #ea4335;
+}
+
+/* Word doc icon - blue accent */
+.file-type-icon.doc {
+    color: #4285f4;
+}
+
+/* Text file icon - gray */
+.file-type-icon.txt {
+    color: #5f6368;
+}
+
+/* Loading state for image preview */
+.file-preview.loading {
+    background: #f0f4f9;
+}
+
+.thumbnail-loader {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #e0e3e7;
+    border-top-color: #0b57d0;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .file-pill .file-name {

@@ -125,13 +125,13 @@ Agent: Great! Let me check flights and weather for you...
 
 The web interface includes:
 - **💬 Chat Interface**: Modern, responsive chat UI with message history
-- **🎨 Modern Premium Design**: 
-  - Purple-blue gradient color scheme
-  - Glassmorphism effects with backdrop blur
+- **🎨 Gemini-Inspired Design**: 
+  - Clean light theme with Google blue accents
+  - Material Design 3 (MD3) styling guidelines
   - Smooth cubic-bezier animations
-  - Glowing effects on interactive elements
-  - Radial gradient background overlays
-  - Enhanced depth with modern shadows
+  - Pill-shaped buttons and inputs
+  - Multi-color gradient hero text
+  - Subtle shadows and hover effects
 - **🔗 Clickable Links**: Flight booking links rendered as clickable elements
 - **🫧 Live Thinking Indicator**: Animated "Thinking..." text with bouncing dots
 - **📱 Adaptive Chat Layout**: Smooth transition from welcome screen to a clean, pill-based conversation view
@@ -210,12 +210,15 @@ The Docker image uses a multi-stage build and runs as a non-root user for securi
 
 ## 📚 Educational Resources
 
-For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every line of code in this directory is commented to explain its purpose and functionality.
+For those learning about agentic workflows, I have included a fully **annotated version of the codebase** in the `annotated/` directory. Every file is commented to explain its purpose and functionality.
 
-- [Annotated Web Server](annotated/web_server.py)
-- [Annotated Main Entry Point](annotated/travel_agent/cli.py)
-- [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py)
-- [Annotated MCP Server](annotated/travel_agent/mcp/mcp_server.py)
+**Key Annotated Files:**
+- [Annotated Web Server](annotated/web_server.py) - FastAPI app with streaming responses
+- [Annotated Agent Orchestrator](annotated/travel_agent/agent/orchestrator.py) - Core agentic loop
+- [Annotated LLM Providers](annotated/travel_agent/agent/llm.py) - Multi-provider abstraction
+- [Annotated MCP Server](annotated/travel_agent/mcp/mcp_server.py) - Tool registration and execution
+
+📖 **[View all annotated files →](annotated/README.md)**
 
 ## 📜 API Attribution
 

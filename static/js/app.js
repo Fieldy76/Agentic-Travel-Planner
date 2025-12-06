@@ -127,8 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderHistory();
 
     const fileInput = document.getElementById('file-input');
-    // const attachBtn = document.querySelector('.attach-btn'); // Removed
-    let selectedFile = null;
+    let selectedFiles = [];  // Array to store multiple files
 
     // Toggle history sidebar
     historyToggle.addEventListener('click', () => {
@@ -156,34 +155,124 @@ document.addEventListener('DOMContentLoaded', () => {
         menu.classList.remove('active');
     });
 
-    // Extracted logic for UI Update
-    function updateFilePill(file) {
-        let existingPill = document.querySelector('.file-pill');
-        if (existingPill) existingPill.remove();
-
-        const pill = document.createElement('div');
-        pill.className = 'file-pill';
-        pill.innerHTML = `
-            <span class="file-name">${file.name}</span>
-            <button type="button" class="remove-file">×</button>
-        `;
-
-        chatForm.insertBefore(pill, userInput);
-
-        pill.querySelector('.remove-file').addEventListener('click', () => {
-            selectedFile = null;
-            if (fileInput) fileInput.value = '';
-            pill.remove();
-        });
-
-        userInput.focus();
+    // Get file type icon based on extension
+    function getFileIcon(ext) {
+        const icons = {
+            'pdf': `<svg class="file-type-icon pdf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <text x="8" y="17" font-size="6" fill="currentColor" stroke="none">PDF</text>
+            </svg>`,
+            'docx': `<svg class="file-type-icon doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>`,
+            'doc': `<svg class="file-type-icon doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>`,
+            'txt': `<svg class="file-type-icon txt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>`,
+            'default': `<svg class="file-type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>`
+        };
+        return icons[ext] || icons['default'];
     }
 
-    // File Selection
+    // Create a pill for a single file
+    function createFilePill(file, index) {
+        const pill = document.createElement('div');
+        pill.className = 'file-pill';
+        pill.dataset.fileIndex = index;
+
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(fileExtension);
+
+        if (isImage) {
+            // Create thumbnail preview for images
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                pill.innerHTML = `
+                    <div class="file-preview">
+                        <img src="${e.target.result}" alt="${file.name}" class="file-thumbnail">
+                    </div>
+                    <span class="file-name">${file.name}</span>
+                    <button type="button" class="remove-file">×</button>
+                `;
+                attachRemoveListener(pill, index);
+            };
+            reader.readAsDataURL(file);
+
+            // Show loading state
+            pill.innerHTML = `
+                <div class="file-preview loading">
+                    <div class="thumbnail-loader"></div>
+                </div>
+                <span class="file-name">${file.name}</span>
+                <button type="button" class="remove-file">×</button>
+            `;
+        } else {
+            // Show file type icon for documents
+            pill.innerHTML = `
+                <div class="file-preview">
+                    ${getFileIcon(fileExtension)}
+                </div>
+                <span class="file-name">${file.name}</span>
+                <button type="button" class="remove-file">×</button>
+            `;
+        }
+
+        attachRemoveListener(pill, index);
+        return pill;
+    }
+
+    // Render all file pills
+    function renderFilePills() {
+        // Remove all existing pills
+        document.querySelectorAll('.file-pill').forEach(pill => pill.remove());
+
+        // Create new pills for each file
+        selectedFiles.forEach((file, index) => {
+            const pill = createFilePill(file, index);
+            chatForm.insertBefore(pill, userInput);
+        });
+    }
+
+    function attachRemoveListener(pill, index) {
+        const removeBtn = pill.querySelector('.remove-file');
+        if (removeBtn) {
+            removeBtn.onclick = () => {
+                // Remove file from array
+                selectedFiles.splice(index, 1);
+                // Re-render all pills (updates indices)
+                renderFilePills();
+                // Clear file input if no files left
+                if (selectedFiles.length === 0) {
+                    fileInput.value = '';
+                }
+            };
+        }
+    }
+
+    // File Selection - handles multiple files
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            selectedFile = e.target.files[0];
-            updateFilePill(selectedFile);
+            // Add new files to the array
+            for (let i = 0; i < e.target.files.length; i++) {
+                selectedFiles.push(e.target.files[i]);
+            }
+            renderFilePills();
+            userInput.focus();
         }
     });
 
@@ -208,20 +297,19 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         let message = userInput.value.trim();
 
-        let fileToSend = null;
+        let filesToSend = [];
 
-        // Handle attachment text & preparation
-        if (selectedFile) {
-            fileToSend = selectedFile; // Capture file before resetting
+        // Handle attachment preparation
+        if (selectedFiles.length > 0) {
+            filesToSend = [...selectedFiles]; // Copy array before resetting
 
             // Reset UI file input state
-            selectedFile = null;
+            selectedFiles = [];
             fileInput.value = '';
-            const pill = document.querySelector('.file-pill');
-            if (pill) pill.remove();
+            document.querySelectorAll('.file-pill').forEach(pill => pill.remove());
         }
 
-        if ((!message && !fileToSend) || isProcessing) return;
+        if ((!message && filesToSend.length === 0) || isProcessing) return;
 
         // Switch UI to active conversation mode
         chatContainer.classList.add('has-messages');
@@ -243,9 +331,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Prepare FormData for multipart upload
             const formData = new FormData();
             formData.append('message', message);
-            if (fileToSend) {
-                formData.append('file', fileToSend);
-            }
+            // Append all files
+            filesToSend.forEach(file => {
+                formData.append('file', file);
+            });
 
             const response = await fetch('/api/chat', {
                 method: 'POST',
