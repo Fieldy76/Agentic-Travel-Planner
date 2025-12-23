@@ -98,6 +98,65 @@ except ImportError:
     genai = None
 
 # =============================================================================
+# LANGFUSE OBSERVABILITY (Optional)
+# =============================================================================
+# Langfuse provides LLM observability, tracing, and analytics.
+# It captures prompt/completion pairs, latency, token usage, and costs.
+# If not configured (no API keys), tracing is silently disabled.
+
+try:
+    from langfuse.decorators import observe, langfuse_context
+    from langfuse import Langfuse
+    
+    # Initialize Langfuse only if both keys are present
+    _langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
+    _langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
+    
+    if _langfuse_secret and _langfuse_public:
+        langfuse_client = Langfuse(
+            secret_key=_langfuse_secret,
+            public_key=_langfuse_public,
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        )
+        LANGFUSE_ENABLED = True
+    else:
+        langfuse_client = None
+        LANGFUSE_ENABLED = False
+except ImportError:
+    # Langfuse not installed - disable gracefully
+    observe = None
+    langfuse_context = None
+    langfuse_client = None
+    LANGFUSE_ENABLED = False
+
+
+def langfuse_observe(name: str = None, as_type: str = None):
+    """
+    Decorator wrapper for Langfuse's @observe decorator.
+    
+    This wrapper provides graceful degradation - if Langfuse is not
+    configured or not installed, it becomes a no-op and functions
+    execute normally without any tracing overhead.
+    
+    Args:
+        name: Name for the trace span (e.g., "openai-call-tool")
+        as_type: Type of span - "generation" for LLM calls, None for others
+    
+    Returns:
+        Decorator that wraps @observe when Langfuse is enabled, no-op otherwise.
+    
+    Example:
+        @langfuse_observe(name="openai-generate-text", as_type="generation")
+        async def generate_text(self, prompt: str) -> str:
+            ...
+    """
+    def decorator(func):
+        if LANGFUSE_ENABLED and observe:
+            return observe(name=name, as_type=as_type)(func)
+        return func
+    return decorator
+
+# =============================================================================
 # ABSTRACT BASE CLASS
 # =============================================================================
 
@@ -225,6 +284,7 @@ class OpenAIProvider(LLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
+    @langfuse_observe(name="openai-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without tool calling capability."""
         # Build messages list
@@ -242,6 +302,7 @@ class OpenAIProvider(LLMProvider):
         # Extract and return the text content
         return response.choices[0].message.content
 
+    @langfuse_observe(name="openai-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the OpenAI API with tool calling capability.
@@ -361,6 +422,7 @@ class AnthropicProvider(LLMProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
+    @langfuse_observe(name="anthropic-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without tool calling capability."""
         kwargs = {
@@ -376,6 +438,7 @@ class AnthropicProvider(LLMProvider):
         response = await self.client.messages.create(**kwargs)
         return response.content[0].text
 
+    @langfuse_observe(name="anthropic-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the Anthropic API with tool use capability.
@@ -570,6 +633,7 @@ class GoogleProvider(LLMProvider):
         # Create the model instance
         self.model = genai.GenerativeModel(model)
 
+    @langfuse_observe(name="google-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without function calling capability."""
         # Combine system prompt with user prompt if provided
@@ -581,6 +645,7 @@ class GoogleProvider(LLMProvider):
         response = await self.model.generate_content_async(full_prompt)
         return response.text
 
+    @langfuse_observe(name="google-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the Google Gemini API with function calling capability.

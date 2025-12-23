@@ -10,3 +10,4 @@ stripe>=8.0.0
 python-multipart
 pypdf
 python-docx
+langfuse

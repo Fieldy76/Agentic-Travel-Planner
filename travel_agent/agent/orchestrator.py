@@ -6,7 +6,7 @@ from datetime import datetime
 import io
 import pypdf
 import docx
-from .llm import LLMProvider
+from .llm import LLMProvider, langfuse_observe, LANGFUSE_ENABLED
 from ..mcp.mcp_server import MCPServer
 from .memory import AgentMemory, InMemoryMemory
 from ..config import setup_logging
@@ -140,6 +140,7 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
+    @langfuse_observe(name="agent-turn")
     async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """Run one turn of the agent loop, yielding events (Async Generator)."""
         logger.info(f"Starting agent turn", extra={"request_id": request_id})

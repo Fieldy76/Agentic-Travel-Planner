@@ -186,6 +186,21 @@ class Config:
     """
     
     # -------------------------------------------------------------------------
+    # Langfuse Observability (Optional)
+    # -------------------------------------------------------------------------
+    # Langfuse provides LLM observability, tracing, and analytics.
+    # These keys are optional - if missing, tracing is disabled silently.
+    
+    LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+    """Langfuse secret key for server-side operations."""
+    
+    LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+    """Langfuse public key for trace identification."""
+    
+    LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+    """Langfuse host URL. Defaults to cloud.langfuse.com."""
+    
+    # -------------------------------------------------------------------------
     # Validation Method
     # -------------------------------------------------------------------------
     

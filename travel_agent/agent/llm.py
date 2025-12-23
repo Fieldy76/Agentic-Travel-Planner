@@ -20,6 +20,40 @@ try:
 except ImportError:
     genai = None
 
+# Langfuse Observability (optional - gracefully degrades if not configured)
+try:
+    from langfuse.decorators import observe, langfuse_context
+    from langfuse import Langfuse
+    
+    # Initialize Langfuse only if keys are present
+    _langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
+    _langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
+    
+    if _langfuse_secret and _langfuse_public:
+        langfuse_client = Langfuse(
+            secret_key=_langfuse_secret,
+            public_key=_langfuse_public,
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        )
+        LANGFUSE_ENABLED = True
+    else:
+        langfuse_client = None
+        LANGFUSE_ENABLED = False
+except ImportError:
+    observe = None
+    langfuse_context = None
+    langfuse_client = None
+    LANGFUSE_ENABLED = False
+
+
+def langfuse_observe(name: str = None, as_type: str = None):
+    """Decorator that wraps @observe when Langfuse is enabled, no-op otherwise."""
+    def decorator(func):
+        if LANGFUSE_ENABLED and observe:
+            return observe(name=name, as_type=as_type)(func)
+        return func
+    return decorator
+
 class LLMProvider(ABC):
     """Abstract base class for LLM providers (Async)."""
     
@@ -40,6 +74,7 @@ class OpenAIProvider(LLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
+    @langfuse_observe(name="openai-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         messages = []
         if system_prompt:
@@ -52,6 +87,7 @@ class OpenAIProvider(LLMProvider):
         )
         return response.choices[0].message.content
 
+    @langfuse_observe(name="openai-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         # OpenAI expects strict role structure: system -> [user, assistant, tool]*
         # Our generic 'tool' role maps directly to OpenAI's 'tool' role
@@ -95,6 +131,7 @@ class AnthropicProvider(LLMProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
+    @langfuse_observe(name="anthropic-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         kwargs = {
             "model": self.model,
@@ -107,6 +144,7 @@ class AnthropicProvider(LLMProvider):
         response = await self.client.messages.create(**kwargs)
         return response.content[0].text
 
+    @langfuse_observe(name="anthropic-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Anthropic Tool Use Format:
         # User: ...
@@ -207,6 +245,7 @@ class GoogleProvider(LLMProvider):
         
         self.model = genai.GenerativeModel(model)
 
+    @langfuse_observe(name="google-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         full_prompt = prompt
         if system_prompt:
@@ -214,6 +253,7 @@ class GoogleProvider(LLMProvider):
         response = await self.model.generate_content_async(full_prompt)
         return response.text
 
+    @langfuse_observe(name="google-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Google Generative AI SDK has async support via generate_content_async
         # But for 'chat' with history, we often use start_chat.

@@ -103,7 +103,7 @@ import pypdf   # PDF text extraction
 import docx    # DOCX (Word) document parsing
 
 # Local imports
-from .llm import LLMProvider                  # LLM provider interface
+from .llm import LLMProvider, langfuse_observe, LANGFUSE_ENABLED  # LLM provider interface + observability
 from ..mcp.mcp_server import MCPServer        # Tool server
 from .memory import AgentMemory, InMemoryMemory  # Conversation memory
 from ..config import setup_logging            # JSON logging configuration
@@ -301,6 +301,7 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
+    @langfuse_observe(name="agent-turn")
     async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """
         Run one turn of the agent loop, yielding events as an async generator.
