@@ -103,7 +103,7 @@ import pypdf   # PDF text extraction
 import docx    # DOCX (Word) document parsing
 
 # Local imports
-from .llm import LLMProvider, langfuse_observe, LANGFUSE_ENABLED  # LLM provider interface + observability
+from .llm import LLMProvider, LANGFUSE_ENABLED, langfuse_trace, langfuse_generation, langfuse_flush  # LLM provider interface + observability with manual tracing
 from ..mcp.mcp_server import MCPServer        # Tool server
 from .memory import AgentMemory, InMemoryMemory  # Conversation memory
 from ..config import setup_logging            # JSON logging configuration
@@ -301,31 +301,21 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
-    @langfuse_observe(name="agent-turn")
+    # @langfuse_observe(name="agent-turn") <-- DECORATOR REMOVED in favor of manual tracing
     async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """
-        Run one turn of the agent loop, yielding events as an async generator.
+        Run one turn of the agent loop, yielding events (Async Generator).
         
-        This is the main entry point for processing user input. It implements
-        a multi-turn loop where the LLM can make multiple tool calls before
-        providing a final response.
+        This is the core execution logic. It processes input, iterates on tool
+        calls, and yields periodic updates to the UI.
         
         Args:
-            user_input: The user's message text
-            file_data: Optional file content as bytes (for uploads)
-            mime_type: MIME type of the uploaded file
-            request_id: Unique identifier for request tracing in logs
-        
+            user_input: The user's message
+            file_data: Optional bytes of an uploaded file
+            mime_type: Optional MIME type of the file
+            request_id: Request ID for tracing
+            
         Yields:
-            dict: Event dictionaries with the following types:
-                - {"type": "message", "content": str}: LLM text response
-                - {"type": "tool_call", "name": str, "arguments": dict}: Tool invocation
-                - {"type": "tool_result", "name": str, "content": str, "is_error": bool}: Tool output
-                - {"type": "error", "content": str}: Error condition
-        
-        Implementation Notes:
-            - Maximum of 10 turns to prevent infinite loops
-            - Retries LLM calls up to 3 times with 1-second delays
             - Retries tool calls up to 3 times with exponential backoff
             - Documents (PDF, DOCX, TXT) are extracted server-side
             - Images are passed directly to the LLM for multimodal processing
@@ -494,6 +484,18 @@ CRITICAL DATE CONTEXT:
                 # Yield text content to the client (only if present)
                 if content:
                     yield {"type": "message", "content": content}
+
+            # Log generation to Langfuse (v3 compatible)
+            if trace:
+                langfuse_generation(
+                    trace=trace,
+                    name="llm-call",
+                    model=self.llm.model,
+                    input=messages,
+                    output=response,
+                    metadata={"turn": current_turn, "request_id": request_id}
+                )
+
                 
             # Check if we're done (no more tool calls)
             if not tool_calls:
@@ -545,6 +547,13 @@ CRITICAL DATE CONTEXT:
                     "name": tool_name,
                     "content": result_text
                 })
+        
+        # End the trace/span if it exists (Langfuse v3)
+        if trace and hasattr(trace, 'end'):
+            trace.end()
+            
+        # Flush Langfuse traces to ensure they are sent (important for async)
+        langfuse_flush()
 
     async def run(self, user_input: str, request_id: str = "default"):
         """

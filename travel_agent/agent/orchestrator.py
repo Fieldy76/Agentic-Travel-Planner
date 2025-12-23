@@ -6,7 +6,7 @@ from datetime import datetime
 import io
 import pypdf
 import docx
-from .llm import LLMProvider, langfuse_observe, LANGFUSE_ENABLED
+from .llm import LLMProvider, LANGFUSE_ENABLED, langfuse_trace, langfuse_generation, langfuse_flush
 from ..mcp.mcp_server import MCPServer
 from .memory import AgentMemory, InMemoryMemory
 from ..config import setup_logging
@@ -140,10 +140,16 @@ WORKFLOW RULES:
 
 Be brief and efficient."""
 
-    @langfuse_observe(name="agent-turn")
     async def run_generator(self, user_input: str, file_data: Optional[bytes] = None, mime_type: Optional[str] = None, request_id: str = "default"):
         """Run one turn of the agent loop, yielding events (Async Generator)."""
         logger.info(f"Starting agent turn", extra={"request_id": request_id})
+        
+        # Create Langfuse trace for this agent turn
+        trace = langfuse_trace(
+            name="agent-turn",
+            session_id=request_id,
+            metadata={"user_input_preview": user_input[:100]}
+        )
         
         # New Logic: Server-side text extraction for documents
         extracted_text = ""
@@ -251,9 +257,19 @@ CRITICAL DATE CONTEXT:
             if not response:
                 break
 
-            
             content = response.get("content")
             tool_calls = response.get("tool_calls")
+            
+            # Log generation to Langfuse
+            if trace:
+                langfuse_generation(
+                    trace=trace,
+                    name="llm-call",
+                    model=getattr(self.llm, 'model', 'unknown'),
+                    input_data={"messages_count": len(messages), "tools_count": len(tools)},
+                    output_data={"content": content[:200] if content else None, "tool_calls": [tc["name"] for tc in tool_calls] if tool_calls else None},
+                    metadata={"turn": current_turn}
+                )
             
             # Add assistant message to memory if there is content OR tool calls
             if content or tool_calls:
@@ -314,6 +330,14 @@ CRITICAL DATE CONTEXT:
                     "name": tool_name,
                     "content": result_text
                 })
+        
+        
+        # End the trace/span if it exists (Langfuse v3)
+        if trace and hasattr(trace, 'end'):
+            trace.end()
+            
+        # Flush Langfuse traces to ensure they are sent
+        langfuse_flush()
 
     async def run(self, user_input: str, request_id: str = "default"):
         """Run one turn of the agent loop (async wrapper for CIL/Testing)."""

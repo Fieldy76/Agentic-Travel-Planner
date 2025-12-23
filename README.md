@@ -112,6 +112,9 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     >    ```
     > 4. All LLM calls and agent turns will be traced automatically
     > 5. The app works normally if Langfuse keys are not configured (graceful degradation)
+    >
+    > **Troubleshooting:**
+    > If you encounter issues with traces not appearing, ensure you are using `start_span` and `start_generation` (v3 API) if customizing the tracing logic, as decorators are incompatible with the async agent loop.
 
     > [!IMPORTANT]
     > The application will automatically load these keys from the `.env` file. Ensure this file exists in the root directory before running the application.

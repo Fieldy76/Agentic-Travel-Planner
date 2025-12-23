@@ -2,6 +2,16 @@ import os
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import json
+from pathlib import Path
+import traceback
+
+# Load .env file to ensure environment variables are available
+from dotenv import load_dotenv
+_project_root = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_project_root / ".env")
+print(f"DEBUG: Loaded .env from {_project_root / '.env'}")
+print(f"DEBUG: LANGFUSE_SECRET_KEY present: {bool(os.getenv('LANGFUSE_SECRET_KEY'))}")
+print(f"DEBUG: LANGFUSE_PUBLIC_KEY present: {bool(os.getenv('LANGFUSE_PUBLIC_KEY'))}")
 
 # Import SDKs
 try:
@@ -20,12 +30,12 @@ try:
 except ImportError:
     genai = None
 
-# Langfuse Observability (optional - gracefully degrades if not configured)
+# Langfuse Observability
+# We wrap this in a try/except block to prevent the server from crashing
+# if the library version is incompatible.
 try:
-    from langfuse.decorators import observe, langfuse_context
     from langfuse import Langfuse
     
-    # Initialize Langfuse only if keys are present
     _langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
     _langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
     
@@ -36,23 +46,86 @@ try:
             host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
         )
         LANGFUSE_ENABLED = True
+        print("DEBUG: Langfuse initialized successfully")
     else:
+        print("DEBUG: Langfuse keys missing - disabled")
         langfuse_client = None
         LANGFUSE_ENABLED = False
-except ImportError:
-    observe = None
-    langfuse_context = None
+except (ImportError, Exception) as e:
+    print(f"WARNING: Langfuse initialization failed: {e}")
     langfuse_client = None
     LANGFUSE_ENABLED = False
 
 
-def langfuse_observe(name: str = None, as_type: str = None):
-    """Decorator that wraps @observe when Langfuse is enabled, no-op otherwise."""
-    def decorator(func):
-        if LANGFUSE_ENABLED and observe:
-            return observe(name=name, as_type=as_type)(func)
-        return func
-    return decorator
+def langfuse_trace(name: str, user_id: str = None, session_id: str = None, metadata: dict = None):
+    """Create a new Langfuse trace. Returns trace object or None if disabled/failed."""
+    if LANGFUSE_ENABLED and langfuse_client:
+        try:
+            # Check if the trace method exists before calling it
+            # v3 SDK uses start_span or similar
+            if hasattr(langfuse_client, 'trace'):
+                 return langfuse_client.trace(
+                     name=name,
+                     user_id=user_id,
+                     session_id=session_id,
+                     metadata=metadata or {}
+                 )
+            elif hasattr(langfuse_client, 'start_span'):
+                # v3: start_span creates a span (potentially root)
+                return langfuse_client.start_span(
+                    name=name,
+                    user_id=user_id,
+                    session_id=session_id,
+                    metadata=metadata or {}
+                )
+            else:
+                print("WARNING: Langfuse client API unknown. Check library version.")
+                return None
+        except Exception as e:
+            print(f"WARNING: Failed to create Langfuse trace: {e}")
+            return None
+    return None
+
+
+def langfuse_generation(trace, name: str, model: str, input_data: Any, output_data: Any = None, metadata: dict = None):
+    """Log a generation (LLM call) to an existing trace. Returns generation object or None."""
+    # We check if trace is valid before attempting to log
+    if trace and LANGFUSE_ENABLED:
+        try:
+            gen = None
+            if hasattr(trace, 'generation'):
+                gen = trace.generation(
+                    name=name,
+                    model=model,
+                    input=input_data,
+                    output=output_data,
+                    metadata=metadata or {}
+                )
+            elif hasattr(trace, 'start_generation'):
+                # v3: start_generation returns a generation object which we should end
+                gen = trace.start_generation(
+                    name=name,
+                    model=model,
+                    input=input_data,
+                    output=output_data,
+                    metadata=metadata or {}
+                )
+                if hasattr(gen, 'end'):
+                    gen.end()
+            return gen
+        except Exception as e:
+            print(f"WARNING: Failed to log generation to Langfuse: {e}")
+            return None
+    return None
+
+
+def langfuse_flush():
+    """Flush all pending Langfuse events to the server."""
+    if LANGFUSE_ENABLED and langfuse_client:
+        try:
+            langfuse_client.flush()
+        except Exception as e:
+            print(f"WARNING: Langfuse flush failed: {e}")
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers (Async)."""
@@ -74,7 +147,6 @@ class OpenAIProvider(LLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
-    @langfuse_observe(name="openai-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         messages = []
         if system_prompt:
@@ -87,11 +159,7 @@ class OpenAIProvider(LLMProvider):
         )
         return response.choices[0].message.content
 
-    @langfuse_observe(name="openai-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # OpenAI expects strict role structure: system -> [user, assistant, tool]*
-        # Our generic 'tool' role maps directly to OpenAI's 'tool' role
-        
         openai_tools = []
         for tool in tools:
             openai_tools.append({
@@ -131,7 +199,6 @@ class AnthropicProvider(LLMProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
-    @langfuse_observe(name="anthropic-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         kwargs = {
             "model": self.model,
@@ -144,13 +211,7 @@ class AnthropicProvider(LLMProvider):
         response = await self.client.messages.create(**kwargs)
         return response.content[0].text
 
-    @langfuse_observe(name="anthropic-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # Anthropic Tool Use Format:
-        # User: ...
-        # Assistant: <tool_use>...</tool_use>
-        # User: <tool_result>...</tool_result>
-        
         anthropic_tools = []
         for tool in tools:
             anthropic_tools.append({
@@ -166,7 +227,6 @@ class AnthropicProvider(LLMProvider):
             if msg["role"] == "system":
                 system_prompt = msg["content"]
             elif msg["role"] == "tool":
-                # Convert generic 'tool' role to Anthropic 'user' role with tool_result content
                 converted_messages.append({
                     "role": "user",
                     "content": [{
@@ -176,7 +236,6 @@ class AnthropicProvider(LLMProvider):
                     }]
                 })
             elif msg["role"] == "assistant" and "tool_calls" in msg:
-                # Need to reconstruct the assistant message with tool_use blocks
                 content_blocks = []
                 if msg.get("content"):
                     content_blocks.append({"type": "text", "text": msg["content"]})
@@ -190,7 +249,6 @@ class AnthropicProvider(LLMProvider):
                             "input": tc["arguments"]
                         })
                 
-                # CRITICAL FIX: Anthropic does not allow empty content blocks
                 if not content_blocks:
                     continue 
 
@@ -199,9 +257,8 @@ class AnthropicProvider(LLMProvider):
                     "content": content_blocks
                 })
             else:
-                # Regular user/system messages
                 if not msg.get("content"):
-                    continue # Skip empty messages
+                    continue
                 converted_messages.append(msg)
 
         kwargs = {
@@ -245,7 +302,6 @@ class GoogleProvider(LLMProvider):
         
         self.model = genai.GenerativeModel(model)
 
-    @langfuse_observe(name="google-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         full_prompt = prompt
         if system_prompt:
@@ -253,18 +309,10 @@ class GoogleProvider(LLMProvider):
         response = await self.model.generate_content_async(full_prompt)
         return response.text
 
-    @langfuse_observe(name="google-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # Google Generative AI SDK has async support via generate_content_async
-        # But for 'chat' with history, we often use start_chat.
-        # ChatSession.send_message_async exists!
-
         google_tools = []
         for tool in tools:
-            # Convert JSON Schema to Google FunctionDeclaration. 
             tool_parameters = tool.get('inputSchema', {})
-            
-            # Map parameters to genai.protos.Schema format
             parameters_schema = genai.protos.Schema(
                 type=genai.protos.Type.OBJECT,
                 properties={
@@ -282,7 +330,6 @@ class GoogleProvider(LLMProvider):
                 )]
             ))
             
-        # 1. Extract system instruction and convert messages to Google Content format
         system_instruction = None
         history = []
         for msg in messages:
@@ -311,7 +358,6 @@ class GoogleProvider(LLMProvider):
                          )
                      ))
             else:
-                # Handle Files (Images/PDFs)
                 if msg.get("files"):
                     for file in msg["files"]:
                         parts.append(genai.protos.Part(
@@ -322,7 +368,6 @@ class GoogleProvider(LLMProvider):
                         ))
 
                 text_content = msg.get("content", "")
-                # Ensure at least some content parts exist
                 if not text_content and not parts: 
                     text_content = " "
                 
@@ -352,7 +397,6 @@ class GoogleProvider(LLMProvider):
         chat = self.model.start_chat(history=chat_history)
         
         try:
-            # Use send_message_async
             response = await chat.send_message_async(
                 current_message,
                 tools=google_tools,
@@ -360,7 +404,6 @@ class GoogleProvider(LLMProvider):
             )
         except Exception as e:
             print(f"CRITICAL GEMINI ERROR: {e}")
-            import traceback
             traceback.print_exc()
             return {"content": f"I encountered an error generating a response: {str(e)}. Please try again.", "tool_calls": None}
         

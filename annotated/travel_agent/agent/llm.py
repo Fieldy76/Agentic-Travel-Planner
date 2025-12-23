@@ -69,7 +69,22 @@ Author: Agentic Travel Planner Team
 import os                                        # Environment variable access
 from abc import ABC, abstractmethod              # Abstract base class support
 from typing import List, Dict, Any, Optional     # Type hints
-import json                                      # JSON parsing for tool arguments
+import json
+from pathlib import Path
+
+# Load .env file to ensure environment variables are available
+# This is crucial because this module might be imported before config.py loads the env
+from dotenv import load_dotenv
+_project_root = Path(__file__).resolve().parent.parent.parent.parent # annotated/travel_agent/agent -> 4 levels up? No.
+# annotated/travel_agent/agent/llm.py -> annotated/travel_agent/agent -> annotated/travel_agent -> annotated -> root
+# _project_root should likely point to the real project root or just use the same logic as main code
+# Main code uses: Path(__file__).resolve().parent.parent.parent
+# annotated file is in annotated/travel_agent/agent/llm.py
+# So: parent (agent) -> parent (travel_agent) -> parent (annotated) -> parent (root)
+# Wait, main code: travel_agent/agent/llm.py -> agent -> travel_agent -> root (3 levels)
+# Annotated: annotated/travel_agent/agent/llm.py -> agent -> travel_agent -> annotated -> root (4 levels)
+_project_root = Path(__file__).resolve().parent.parent.parent.parent
+load_dotenv(_project_root / ".env")                                      # JSON parsing for tool arguments
 
 # =============================================================================
 # CONDITIONAL SDK IMPORTS
@@ -100,15 +115,19 @@ except ImportError:
 # =============================================================================
 # LANGFUSE OBSERVABILITY (Optional)
 # =============================================================================
-# Langfuse provides LLM observability, tracing, and analytics.
-# It captures prompt/completion pairs, latency, token usage, and costs.
-# If not configured (no API keys), tracing is silently disabled.
+# Langfuse integration for LLM observability.
+# We use manual tracing (start_span/start_generation) instead of decorators
+# because decorators (like @observe) do not support Async Generators well.
+#
+# This setup allows us to:
+# 1. Trace entire agent turns (start_span defined in orchestrator)
+# 2. Log LLM generations nested within those turns (start_generation here)
+# 3. Gracefully degrade if Langfuse is not configured.
 
 try:
-    from langfuse.decorators import observe, langfuse_context
     from langfuse import Langfuse
     
-    # Initialize Langfuse only if both keys are present
+    # Initialize Langfuse only if keys are present (loaded via dotenv above)
     _langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
     _langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
     
@@ -122,39 +141,118 @@ try:
     else:
         langfuse_client = None
         LANGFUSE_ENABLED = False
-except ImportError:
-    # Langfuse not installed - disable gracefully
-    observe = None
-    langfuse_context = None
+except (ImportError, Exception) as e:
+    # Handle both missing package and init errors (e.g., config issues)
+    print(f"WARNING: Langfuse initialization failed: {e}")
     langfuse_client = None
     LANGFUSE_ENABLED = False
 
 
-def langfuse_observe(name: str = None, as_type: str = None):
+def langfuse_trace(name: str, user_id: str = None, session_id: str = None, metadata: dict = None):
     """
-    Decorator wrapper for Langfuse's @observe decorator.
+    Create a new Langfuse trace/span.
     
-    This wrapper provides graceful degradation - if Langfuse is not
-    configured or not installed, it becomes a no-op and functions
-    execute normally without any tracing overhead.
+    In Langfuse v3 SDK, 'trace()' is replaced by 'start_span()'.
+    This function acts as a wrapper to create a root span if no parent context exists,
+    or a new span.
     
     Args:
-        name: Name for the trace span (e.g., "openai-call-tool")
-        as_type: Type of span - "generation" for LLM calls, None for others
+        name: Name of the trace/span (e.g., "agent-turn")
+        user_id: Optional user identifier
+        session_id: Optional session identifier for grouping
+        metadata: Additional metadata dictionary
     
     Returns:
-        Decorator that wraps @observe when Langfuse is enabled, no-op otherwise.
-    
-    Example:
-        @langfuse_observe(name="openai-generate-text", as_type="generation")
-        async def generate_text(self, prompt: str) -> str:
-            ...
+        A Langfuse span object or None if disabled.
     """
-    def decorator(func):
-        if LANGFUSE_ENABLED and observe:
-            return observe(name=name, as_type=as_type)(func)
-        return func
-    return decorator
+    if LANGFUSE_ENABLED and langfuse_client:
+        try:
+            # Check API compatibility (v3 vs older)
+            if hasattr(langfuse_client, 'trace'):
+                 # Older SDKs
+                 return langfuse_client.trace(
+                     name=name,
+                     user_id=user_id,
+                     session_id=session_id,
+                     metadata=metadata or {}
+                 )
+            elif hasattr(langfuse_client, 'start_span'):
+                # v3 SDK pattern
+                return langfuse_client.start_span(
+                    name=name,
+                    user_id=user_id,
+                    session_id=session_id,
+                    metadata=metadata or {}
+                )
+            else:
+                 print("WARNING: Langfuse client API unknown.")
+                 return None
+        except Exception as e:
+            print(f"WARNING: Failed to create Langfuse trace: {e}")
+            return None
+    return None
+
+
+def langfuse_generation(trace, name: str, model: str, input_data: Any, output_data: Any = None, metadata: dict = None):
+    """
+    Log a generation (LLM call) to an existing trace/span.
+    
+    This manually records an LLM generation event. In v3 SDK, we create
+    a generation object and must explicitly end() it.
+    
+    Args:
+        trace: The parent trace/span object
+        name: Name of the generation (e.g., "llm-call")
+        model: Model name used
+        input_data: Input prompts/messages
+        output_data: Generated response
+        metadata: Additional info
+        
+    Returns:
+        The generation object or None.
+    """
+    if trace and LANGFUSE_ENABLED:
+        try:
+            gen = None
+            if hasattr(trace, 'generation'):
+                # Older SDKs might use this convenience method
+                gen = trace.generation(
+                    name=name,
+                    model=model,
+                    input=input_data,
+                    output=output_data,
+                    metadata=metadata or {}
+                )
+            elif hasattr(trace, 'start_generation'):
+                # v3 SDK pattern: start -> log -> end
+                gen = trace.start_generation(
+                    name=name,
+                    model=model,
+                    input=input_data,
+                    output=output_data,
+                    metadata=metadata or {}
+                )
+                if hasattr(gen, 'end'):
+                    gen.end()
+            return gen
+        except Exception as e:
+            print(f"WARNING: Failed to log generation to Langfuse: {e}")
+            return None
+    return None
+
+
+def langfuse_flush():
+    """
+    Flush all pending Langfuse events to the server.
+    
+    Should be called at the end of execution to ensure data is sent,
+    as background threads might be killed otherwise.
+    """
+    if LANGFUSE_ENABLED and langfuse_client:
+        try:
+            langfuse_client.flush()
+        except Exception as e:
+             print(f"WARNING: Langfuse flush failed: {e}")
 
 # =============================================================================
 # ABSTRACT BASE CLASS
@@ -284,7 +382,6 @@ class OpenAIProvider(LLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
-    @langfuse_observe(name="openai-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without tool calling capability."""
         # Build messages list
@@ -302,7 +399,6 @@ class OpenAIProvider(LLMProvider):
         # Extract and return the text content
         return response.choices[0].message.content
 
-    @langfuse_observe(name="openai-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the OpenAI API with tool calling capability.
@@ -422,7 +518,6 @@ class AnthropicProvider(LLMProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
-    @langfuse_observe(name="anthropic-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without tool calling capability."""
         kwargs = {
@@ -438,7 +533,6 @@ class AnthropicProvider(LLMProvider):
         response = await self.client.messages.create(**kwargs)
         return response.content[0].text
 
-    @langfuse_observe(name="anthropic-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the Anthropic API with tool use capability.
@@ -633,7 +727,6 @@ class GoogleProvider(LLMProvider):
         # Create the model instance
         self.model = genai.GenerativeModel(model)
 
-    @langfuse_observe(name="google-generate-text", as_type="generation")
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Generate text without function calling capability."""
         # Combine system prompt with user prompt if provided
@@ -645,7 +738,6 @@ class GoogleProvider(LLMProvider):
         response = await self.model.generate_content_async(full_prompt)
         return response.text
 
-    @langfuse_observe(name="google-call-tool", as_type="generation")
     async def call_tool(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Call the Google Gemini API with function calling capability.
