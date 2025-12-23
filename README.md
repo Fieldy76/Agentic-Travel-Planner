@@ -33,6 +33,7 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
 
 ### Production-Ready Features
 - **📊 Structured Logging**: JSON-formatted logs with `request_id`, `timestamp`, and contextual metadata for observability.
+- **🔭 Langfuse Observability**: Optional LLM tracing and analytics - monitor latency, token usage, and costs.
 - **✅ Pydantic Validation**: Strict type validation for all tools using Pydantic models.
 - **⚡ Async Architecture**: High-performance asynchronous execution using `asyncio` and `FastAPI`.
 - **🔄 Error Handling & Retries**: Exponential backoff retry logic for resilient tool execution.
@@ -98,6 +99,19 @@ A production-ready, framework-free Agentic Workflow for travel planning built wi
     > python tests/test_stripe_config.py
     > ```
     > This will verify your API keys are working correctly.
+
+    > [!TIP]
+    > **Langfuse Observability (Optional):**
+    > 1. Create a free account at [langfuse.com](https://langfuse.com)
+    > 2. Get your API keys from the project settings
+    > 3. Add them to your `.env` file:
+    >    ```ini
+    >    LANGFUSE_SECRET_KEY=sk-lf-...
+    >    LANGFUSE_PUBLIC_KEY=pk-lf-...
+    >    LANGFUSE_HOST=https://cloud.langfuse.com
+    >    ```
+    > 4. All LLM calls and agent turns will be traced automatically
+    > 5. The app works normally if Langfuse keys are not configured (graceful degradation)
 
     > [!IMPORTANT]
     > The application will automatically load these keys from the `.env` file. Ensure this file exists in the root directory before running the application.
