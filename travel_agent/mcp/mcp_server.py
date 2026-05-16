@@ -1,110 +1,97 @@
 import inspect
-from typing import Callable, Dict, Any, List
-from .protocol import Tool, create_tool_definition, CallToolResult
-from pydantic import BaseModel
+import json
+import logging
+from typing import Any, Callable, Dict, List
+
+from .protocol import CallToolResult, create_tool_definition
+
+logger = logging.getLogger(__name__)
+
+_TYPE_MAP = {
+    str: "string",
+    int: "integer",
+    float: "number",
+    bool: "boolean",
+    list: "array",
+    dict: "object",
+}
+
 
 class MCPServer:
-    """A simple in-process MCP Server to host tools (Async & Pydantic enhanced)."""
-    
-    def __init__(self):
+    """In-process tool server. Schemas inferred from function signatures + docstrings."""
+
+    def __init__(self) -> None:
         self.tools: Dict[str, Callable] = {}
         self.tool_definitions: List[Dict[str, Any]] = []
-        self.tool_models: Dict[str, BaseModel] = {} # Store Pydantic models for validation
 
-    def register_tool(self, func: Callable, name: str = None, description: str = None):
-        """
-        Register a python function as a tool. 
-        Supports Pydantic models for argument validation if present in type hints.
-        """
-        if name is None:
-            name = func.__name__
-        if description is None:
-            description = func.__doc__ or ""
-            
-        # Inspect function signature
+    def register_tool(self, func: Callable, name: str | None = None, description: str | None = None) -> None:
+        tool_name = name or func.__name__
+        tool_description = description or (inspect.getdoc(func) or "").strip()
         sig = inspect.signature(func)
-        
-        # Check if the first argument is a Pydantic model (Standard Pattern for this refactor)
-        # We look for a pattern where the function accepts arguments that match strict Pydantic models
-        # But for ABI compatibility with the LLM, we need to generate JSON Schema.
-        
-        # METHOD 1: Hybrid - Check if arguments are primitive types or Pydantic models
-        # For simplicity in this migration, let's assume if there are Pydantic models defined 
-        # in the module matching {Name}Args, we use them, OR we inspect the signature.
-        
-        # Let's rely on standard python inspect for primitives, but if we see a Pydantic model
-        # we can extract the schema directly.
-        
-        parameters = {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-        
-        # Scanning for Pydantic models in annotations
-        # This is a bit advanced: we look at tool/flights.py and see search_flights(origin, dest...)
-        # In our refactor of flights.py, we kept the function signature as primitives!
-        # "async def search_flights(origin: str, destination: str, date: str)"
-        # But we DEFINED "FlightSearchArgs" model.
-        #
-        # DECISION: To keep things simple and compatible with existing orchestration logic
-        # without requiring a total rewrite of every tool's internal logic to take a single "args" object,
-        # we will continue to use signature inspection for the *Schema Generation*, 
-        # but we mark the tool as async-capable.
-        # 
-        # If we want to use Pydantic for validation, we can look up if there is a matching model, 
-        # but for now, strict type hints in the signature are a good proxy.
-        
+
+        properties: Dict[str, Dict[str, Any]] = {}
+        required: List[str] = []
         for param_name, param in sig.parameters.items():
-            param_type = "string" # Default
-            if param.annotation == int:
-                param_type = "integer"
-            elif param.annotation == float:
-                param_type = "number"
-            elif param.annotation == bool:
-                param_type = "boolean"
-            elif param.annotation == list:
-                param_type = "array"
-            elif param.annotation == dict:
-                param_type = "object"
-                
-            parameters["properties"][param_name] = {
-                "type": param_type,
-                "description": f"Parameter {param_name}" # Could parse docstring
+            properties[param_name] = {
+                "type": _TYPE_MAP.get(param.annotation, "string"),
+                "description": f"Parameter {param_name}",
             }
-            if param.default == inspect.Parameter.empty:
-                parameters["required"].append(param_name)
-                
-        self.tools[name] = func
-        self.tool_definitions.append(create_tool_definition(name, description, parameters))
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
+
+        parameters = {"type": "object", "properties": properties, "required": required}
+        self.tools[tool_name] = func
+        self.tool_definitions.append(create_tool_definition(tool_name, tool_description, parameters))
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return self.tool_definitions
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> CallToolResult:
-        """Call a tool asynchronously."""
         if name not in self.tools:
             return CallToolResult(
                 content=[{"type": "text", "text": f"Tool not found: {name}"}],
-                isError=True
+                isError=True,
             )
-            
-        try:
-            func = self.tools[name]
-            
-            # Check if function is async
-            if inspect.iscoroutinefunction(func):
-                result = await func(**arguments)
-            else:
-                # Synchronous fallback
-                result = func(**arguments)
-                
+
+        func = self.tools[name]
+        sig = inspect.signature(func)
+        accepted = set(sig.parameters)
+
+        # Strip parameters the function doesn't accept (LLMs occasionally hallucinate extras).
+        filtered = {k: v for k, v in (arguments or {}).items() if k in accepted}
+
+        # Check required args are present.
+        missing = [
+            n for n, p in sig.parameters.items()
+            if p.default is inspect.Parameter.empty and n not in filtered
+        ]
+        if missing:
             return CallToolResult(
-                content=[{"type": "text", "text": str(result)}],
-                isError=False
+                content=[{"type": "text", "text": f"Missing required arguments: {missing}"}],
+                isError=True,
+            )
+
+        try:
+            if inspect.iscoroutinefunction(func):
+                result = await func(**filtered)
+            else:
+                result = func(**filtered)
+        except ValueError as e:
+            # Validation errors raised by the tool itself — return cleanly.
+            return CallToolResult(
+                content=[{"type": "text", "text": f"Invalid input: {e}"}],
+                isError=True,
             )
         except Exception as e:
+            logger.exception("Tool %s raised", name)
             return CallToolResult(
-                content=[{"type": "text", "text": f"Error executing tool {name}: {str(e)}"}],
-                isError=True
+                content=[{"type": "text", "text": f"Error executing tool {name}: {e}"}],
+                isError=True,
             )
+
+        # Preserve structure: JSON-serialise dicts/lists; pass scalars through as str.
+        if isinstance(result, (dict, list)):
+            text = json.dumps(result, default=str, ensure_ascii=False)
+        else:
+            text = str(result)
+        return CallToolResult(content=[{"type": "text", "text": text}], isError=False)

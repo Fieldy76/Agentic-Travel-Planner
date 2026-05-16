@@ -1,19 +1,16 @@
+import logging
 import os
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
-import json
-from pathlib import Path
 import traceback
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+import json
 
-# Load .env file to ensure environment variables are available
-from dotenv import load_dotenv
-_project_root = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_project_root / ".env")
-print(f"DEBUG: Loaded .env from {_project_root / '.env'}")
-print(f"DEBUG: LANGFUSE_SECRET_KEY present: {bool(os.getenv('LANGFUSE_SECRET_KEY'))}")
-print(f"DEBUG: LANGFUSE_PUBLIC_KEY present: {bool(os.getenv('LANGFUSE_PUBLIC_KEY'))}")
+# Importing Config triggers .env loading at module init; needed before we
+# read LANGFUSE_* below.
+from ..config import Config  # noqa: F401
 
-# Import SDKs
+logger = logging.getLogger(__name__)
+
 try:
     from openai import AsyncOpenAI
 except ImportError:
@@ -30,92 +27,79 @@ try:
 except ImportError:
     genai = None
 
-# Langfuse Observability
-# We wrap this in a try/except block to prevent the server from crashing
-# if the library version is incompatible.
 try:
     from langfuse import Langfuse
-    
+
     _langfuse_secret = os.getenv("LANGFUSE_SECRET_KEY")
     _langfuse_public = os.getenv("LANGFUSE_PUBLIC_KEY")
-    
+
     if _langfuse_secret and _langfuse_public:
         langfuse_client = Langfuse(
             secret_key=_langfuse_secret,
             public_key=_langfuse_public,
-            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
         )
         LANGFUSE_ENABLED = True
-        print("DEBUG: Langfuse initialized successfully")
+        logger.info("Langfuse initialized")
     else:
-        print("DEBUG: Langfuse keys missing - disabled")
         langfuse_client = None
         LANGFUSE_ENABLED = False
-except (ImportError, Exception) as e:
-    print(f"WARNING: Langfuse initialization failed: {e}")
+        logger.info("Langfuse disabled (no keys set)")
+except Exception as _e:
+    logger.warning("Langfuse initialization failed: %s", _e)
     langfuse_client = None
     LANGFUSE_ENABLED = False
 
 
-def langfuse_trace(name: str, user_id: str = None, session_id: str = None, metadata: dict = None):
+def langfuse_trace(name: str, user_id: str | None = None, session_id: str | None = None, metadata: dict | None = None):
     """Create a new Langfuse trace. Returns trace object or None if disabled/failed."""
-    if LANGFUSE_ENABLED and langfuse_client:
-        try:
-            # Check if the trace method exists before calling it
-            # v3 SDK uses start_span or similar
-            if hasattr(langfuse_client, 'trace'):
-                 return langfuse_client.trace(
-                     name=name,
-                     user_id=user_id,
-                     session_id=session_id,
-                     metadata=metadata or {}
-                 )
-            elif hasattr(langfuse_client, 'start_span'):
-                # v3: start_span creates a span (potentially root)
-                return langfuse_client.start_span(
-                    name=name,
-                    user_id=user_id,
-                    session_id=session_id,
-                    metadata=metadata or {}
-                )
-            else:
-                print("WARNING: Langfuse client API unknown. Check library version.")
-                return None
-        except Exception as e:
-            print(f"WARNING: Failed to create Langfuse trace: {e}")
-            return None
+    if not (LANGFUSE_ENABLED and langfuse_client):
+        return None
+    meta = dict(metadata or {})
+    if user_id is not None:
+        meta.setdefault("user_id", user_id)
+    if session_id is not None:
+        meta.setdefault("session_id", session_id)
+    try:
+        if hasattr(langfuse_client, "trace"):
+            # v2 API
+            return langfuse_client.trace(name=name, user_id=user_id, session_id=session_id, metadata=meta)
+        if hasattr(langfuse_client, "start_span"):
+            # v3 API — span doesn't take user/session kwargs; metadata is the channel.
+            return langfuse_client.start_span(name=name, metadata=meta)
+        logger.warning("Langfuse client API unknown; check library version")
+    except Exception:
+        logger.exception("Langfuse trace creation failed")
     return None
 
 
-def langfuse_generation(trace, name: str, model: str, input_data: Any, output_data: Any = None, metadata: dict = None):
-    """Log a generation (LLM call) to an existing trace. Returns generation object or None."""
-    # We check if trace is valid before attempting to log
-    if trace and LANGFUSE_ENABLED:
-        try:
-            gen = None
-            if hasattr(trace, 'generation'):
-                gen = trace.generation(
-                    name=name,
-                    model=model,
-                    input=input_data,
-                    output=output_data,
-                    metadata=metadata or {}
-                )
-            elif hasattr(trace, 'start_generation'):
-                # v3: start_generation returns a generation object which we should end
-                gen = trace.start_generation(
-                    name=name,
-                    model=model,
-                    input=input_data,
-                    output=output_data,
-                    metadata=metadata or {}
-                )
-                if hasattr(gen, 'end'):
-                    gen.end()
-            return gen
-        except Exception as e:
-            print(f"WARNING: Failed to log generation to Langfuse: {e}")
+def langfuse_generation(trace, name: str, model: str, input_data: Any, output_data: Any = None, metadata: dict | None = None):
+    """Log a generation (LLM call) to an existing trace."""
+    if not (trace and LANGFUSE_ENABLED):
+        return None
+    try:
+        if hasattr(trace, "generation"):
+            # v2
+            return trace.generation(name=name, model=model, input=input_data, output=output_data, metadata=metadata or {})
+        if hasattr(trace, "start_observation"):
+            # v3+: start_observation supersedes start_generation
+            gen = trace.start_observation(
+                as_type="generation", name=name, model=model,
+                input=input_data, output=output_data, metadata=metadata or {},
+            )
+        elif hasattr(trace, "start_generation"):
+            # v3 legacy
+            gen = trace.start_generation(
+                name=name, model=model, input=input_data,
+                output=output_data, metadata=metadata or {},
+            )
+        else:
             return None
+        if hasattr(gen, "end"):
+            gen.end()
+        return gen
+    except Exception:
+        logger.exception("Langfuse generation log failed")
     return None
 
 
@@ -124,8 +108,8 @@ def langfuse_flush():
     if LANGFUSE_ENABLED and langfuse_client:
         try:
             langfuse_client.flush()
-        except Exception as e:
-            print(f"WARNING: Langfuse flush failed: {e}")
+        except Exception:
+            logger.exception("Langfuse flush failed")
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers (Async)."""
@@ -183,10 +167,16 @@ class OpenAIProvider(LLMProvider):
         if message.tool_calls:
             tool_calls = []
             for tc in message.tool_calls:
+                try:
+                    arguments = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError) as e:
+                    # Surface as a tool call with an error payload so the agent loop
+                    # can return the error to the LLM rather than crashing.
+                    arguments = {"__error__": f"Malformed JSON arguments from LLM: {e}"}
                 tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "arguments": json.loads(tc.function.arguments)
+                    "arguments": arguments,
                 })
             return {"content": message.content, "tool_calls": tool_calls}
         
@@ -292,15 +282,32 @@ class GoogleProvider(LLMProvider):
         if not genai:
             raise ImportError("Google Generative AI SDK not installed.")
         genai.configure(api_key=api_key)
-        
+
         self.safety_settings = {
             "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
             "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
             "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
             "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
         }
-        
+
+        self.model_name = model
         self.model = genai.GenerativeModel(model)
+        # Cache rebuilt GenerativeModel instances per system_instruction so we
+        # don't allocate a fresh client object on every call_tool().
+        self._model_cache: Dict[str, Any] = {"": self.model}
+
+    def _model_for(self, system_instruction: str | None):
+        key = system_instruction or ""
+        cached = self._model_cache.get(key)
+        if cached is not None:
+            return cached
+        m = genai.GenerativeModel(
+            self.model_name,
+            system_instruction=system_instruction,
+            safety_settings=self.safety_settings,
+        )
+        self._model_cache[key] = m
+        return m
 
     async def generate_text(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         full_prompt = prompt
@@ -313,12 +320,17 @@ class GoogleProvider(LLMProvider):
         google_tools = []
         for tool in tools:
             tool_parameters = tool.get('inputSchema', {})
+            properties = {}
+            for k, v in tool_parameters.get('properties', {}).items():
+                raw_type = (v.get('type') or 'string').upper()
+                try:
+                    proto_type = genai.protos.Type[raw_type]
+                except KeyError:
+                    proto_type = genai.protos.Type.STRING
+                properties[k] = genai.protos.Schema(type=proto_type)
             parameters_schema = genai.protos.Schema(
                 type=genai.protos.Type.OBJECT,
-                properties={
-                    k: genai.protos.Schema(type=genai.protos.Type[v['type'].upper()])
-                    for k, v in tool_parameters.get('properties', {}).items()
-                },
+                properties=properties,
                 required=tool_parameters.get('required', [])
             )
 
@@ -381,31 +393,28 @@ class GoogleProvider(LLMProvider):
                 else:
                     history.append(current_content)
 
-        if system_instruction:
-            self.model = genai.GenerativeModel(
-                self.model.model_name, 
-                system_instruction=system_instruction,
-                safety_settings=self.safety_settings
-            )
+        active_model = self._model_for(system_instruction)
 
         chat_history = history[:-1] if len(history) > 0 else []
         current_message = history[-1] if len(history) > 0 else None
-        
-        if not current_message:
-             return {"content": "Error: No message content to send.", "tool_calls": None}
 
-        chat = self.model.start_chat(history=chat_history)
-        
+        if not current_message:
+            return {"content": "Error: No message content to send.", "tool_calls": None}
+
+        chat = active_model.start_chat(history=chat_history)
+
         try:
             response = await chat.send_message_async(
                 current_message,
                 tools=google_tools,
-                safety_settings=self.safety_settings
+                safety_settings=self.safety_settings,
             )
-        except Exception as e:
-            print(f"CRITICAL GEMINI ERROR: {e}")
-            traceback.print_exc()
-            return {"content": f"I encountered an error generating a response: {str(e)}. Please try again.", "tool_calls": None}
+        except Exception:
+            logger.exception("Gemini call failed")
+            return {
+                "content": "I encountered an error generating a response. Please try again.",
+                "tool_calls": None,
+            }
         
         tool_calls = []
         content_text = ""

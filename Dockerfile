@@ -1,41 +1,39 @@
-# Multi-stage build for Python application
-FROM python:3.11-slim as builder
+ARG PYTHON_VERSION=3.11
 
-# Set working directory
+# --- Builder ---
+FROM python:${PYTHON_VERSION}-slim AS builder
 WORKDIR /app
-
-# Copy requirements first for layer caching
 COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Production stage
-FROM python:3.11-slim
-
-# Create non-root user for security
+# --- Runtime ---
+FROM python:${PYTHON_VERSION}-slim
+ARG PYTHON_VERSION
 RUN useradd -m -u 1000 appuser
-
-# Set working directory
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application code
 COPY travel_agent/ ./travel_agent/
-COPY .env.example ./.env.example
+COPY static/ ./static/
+COPY web_server.py ./web_server.py
 
-# Change ownership to non-root user
 RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
 USER appuser
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=5000
 
-# Run the application
-CMD ["python", "-m", "travel_agent.main"]
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://localhost:${PORT}/healthz || exit 1
+
+ENTRYPOINT ["python", "-m", "uvicorn", "web_server:app", "--host", "0.0.0.0", "--port", "5000"]
