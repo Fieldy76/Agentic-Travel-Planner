@@ -14,6 +14,11 @@ flights, hotels, cars, weather, and payments.
   Sessions are idempotent and tied to webhooks; no card data ever touches your
   server. Mock mode for local dev.
 - **Multi-provider LLM**: OpenAI, Anthropic, Google. Async throughout.
+- **External MCP servers** (optional): set `GOOGLE_MAPS_API_KEY` and the
+  `@modelcontextprotocol/server-google-maps` Node subprocess spins up at
+  app startup, adding `maps_geocode`, `maps_directions`,
+  `maps_distance_matrix`, `maps_places_search`, etc. to the LLM's tool
+  belt — alongside the in-process flights/hotels/cars tools.
 - **Per-session memory** with a sliding window cap; sessions isolated by
   `X-Session-Id`.
 - **Production-grade web layer**: streaming NDJSON chat, file upload size

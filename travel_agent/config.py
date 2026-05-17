@@ -48,6 +48,12 @@ class Config:
     LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
     LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
 
+    # External MCP subprocesses (optional — registration is key-gated)
+    # When set, the Google Maps MCP server (npx) is spawned at app startup and
+    # its tools (maps_geocode / maps_directions / maps_places / ...) become
+    # available to the LLM alongside the in-process tools.
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+
     # Web server
     APP_URL = os.getenv("APP_URL", "http://localhost:5000")
     ALLOWED_ORIGINS = _split_csv(os.getenv("ALLOWED_ORIGINS", "http://localhost:5000"))

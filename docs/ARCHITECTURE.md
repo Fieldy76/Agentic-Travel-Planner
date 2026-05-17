@@ -129,8 +129,14 @@ Shared agent-construction surface used by both `web_server.py` and `cli.py`:
 - `select_provider()` → `(provider_name, api_key)` from `Config`, preferring
   `Config.LLM_PROVIDER`, falling back to whichever provider has a key.
 - `build_llm()` → an `LLMProvider`, or `None` if nothing is configured.
-- `build_mcp_server()` → fresh `MCPServer` with all production tools
-  registered (single source of truth for tool registration).
+- `build_mcp_server()` → fresh `MCPServer` with all in-process production
+  tools registered (single source of truth for tool registration). Sync —
+  no subprocess startup happens here.
+- `attach_external_mcp_servers(server)` → async, called from FastAPI's
+  `lifespan` on startup. Spawns optional MCP subprocesses (currently the
+  Google Maps server when `GOOGLE_MAPS_API_KEY` is set). Failures are
+  logged but never raised — the in-process tools must keep working even
+  if a subprocess can't start.
 - `build_agent()` → full `AgentOrchestrator` for CLI / one-shot use.
 
 ### `travel_agent/agent/orchestrator.py`
@@ -206,16 +212,25 @@ the MCP `Tool` / `CallToolRequest` / `CallToolResult`. `create_tool_definition`
 produces the dict shape we hand to the LLM.
 
 ### `travel_agent/mcp/mcp_server.py`
-In-process tool registry + dispatcher.
+Tool registry + dispatcher, with optional stdio MCP subprocess support.
 
 - `register_tool(func)` — infers a JSON Schema from the function signature
   (`int`/`float`/`bool`/`list`/`dict` → JSON Schema types; everything else
   defaults to `"string"`). Uses `inspect.getdoc()` for the tool description.
+- `register_mcp_subprocess(command, args, env, label)` — async. Spawns an
+  MCP server subprocess (e.g. the Google Maps Node server) via the official
+  `mcp` Python SDK's `stdio_client`, calls `initialize` + `tools/list`, and
+  registers each remote tool as a proxy in the same registry. Tool names
+  collide on a last-write-wins basis (logged at WARNING). Subprocesses are
+  held open by an `AsyncExitStack`; `close()` shuts them all down cleanly
+  (wired into FastAPI's `lifespan`).
 - `call_tool(name, arguments)` — drops unknown args (LLMs hallucinate),
   validates required ones are present, dispatches sync vs async, JSON-encodes
   dict/list results so structure isn't flattened to `str(dict)`, returns a
   `CallToolResult`. `ValueError` from tools is surfaced cleanly; other
   exceptions are logged with `logger.exception` and returned as `isError`.
+  Subprocess proxies bypass the local arg-filtering (the remote server
+  validates) and forward straight to `session.call_tool`.
 
 ### `travel_agent/tools/*`
 Each tool is a plain function (sync or async). Inputs are simple types — the

@@ -50,6 +50,31 @@ Tests use:
 6. Update the system prompt at `travel_agent/agent/prompts/system.md` if the
    LLM needs guidance on when to call it.
 
+## Adding an external MCP server
+
+For tools that already exist as an MCP server (Node/Python subprocess speaking
+stdio JSON-RPC), you don't need to write any tool code — just wire the
+subprocess into `attach_external_mcp_servers` in `travel_agent/setup.py`:
+
+```python
+if Config.MY_NEW_SERVER_KEY:
+    await server.register_mcp_subprocess(
+        command="npx",
+        args=["-y", "@some-org/server-name"],
+        env={"MY_NEW_SERVER_KEY": Config.MY_NEW_SERVER_KEY},
+        label="my-new-server",
+    )
+```
+
+Then add `MY_NEW_SERVER_KEY` to `Config` (in `travel_agent/config.py`) and to
+`.env.example`. Keep the registration **key-gated** so a fresh clone without
+the key still boots — `attach_external_mcp_servers` already wraps failures in
+a try/except so a misconfigured subprocess never crashes the app.
+
+Tool discovery (`tools/list`) and dispatch (`tools/call`) happen automatically
+— the remote tools show up in `MCPServer.list_tools()` alongside the
+in-process ones, indistinguishable to the orchestrator and the LLM.
+
 ## Adding a new LLM provider
 
 Subclass `LLMProvider` in `travel_agent/agent/llm.py`, then add a branch to

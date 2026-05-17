@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Dict, Optional, Tuple
 
 import uvicorn
@@ -19,7 +20,7 @@ from travel_agent.agent.memory import InMemoryMemory
 from travel_agent.agent.orchestrator import AgentOrchestrator
 from travel_agent.config import Config, ConfigError, setup_logging
 from travel_agent.payments.stripe_client import PaymentProviderError
-from travel_agent.setup import build_llm, build_mcp_server
+from travel_agent.setup import attach_external_mcp_servers, build_llm, build_mcp_server
 from travel_agent.tools.payment import get_payment_service
 
 setup_logging()
@@ -124,7 +125,21 @@ def _build_session_manager() -> SessionManager | MockSessionManager:
     )
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Wire up MCP subprocesses (Google Maps etc.) after the FastAPI event loop
+    # exists. Safe no-op when running on the MockSessionManager or when no
+    # external MCP keys are set.
+    if isinstance(sessions, SessionManager):
+        await attach_external_mcp_servers(sessions._server)
+    try:
+        yield
+    finally:
+        if isinstance(sessions, SessionManager):
+            await sessions._server.close()
+
+
+app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(

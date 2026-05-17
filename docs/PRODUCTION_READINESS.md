@@ -285,6 +285,51 @@ System prompt updated so the LLM explicitly explains the deeplink flow to the us
 
 ---
 
+## Phase 2.6 — External MCP servers (Google Maps) ✅
+
+Added to prove the "lift-and-shift to stdio MCP" claim wasn't aspirational and
+to give the LLM a richer toolbelt for travel planning (driving directions,
+places search, distance matrices).
+
+### What's done
+
+- `travel_agent/mcp/mcp_server.py::register_mcp_subprocess` — spawns an MCP
+  server subprocess via the official `mcp` Python SDK's `stdio_client`,
+  discovers its tools via `tools/list`, registers each remote tool as a proxy
+  in the same in-process registry. Subprocesses are held open by an
+  `AsyncExitStack`; `close()` shuts them all down cleanly.
+- `travel_agent/setup.py::attach_external_mcp_servers` — async, key-gated.
+  Today it spawns `@modelcontextprotocol/server-google-maps` when
+  `GOOGLE_MAPS_API_KEY` is set; failures are logged but never raised.
+- `web_server.py` — converted to FastAPI's `lifespan` context manager so
+  subprocesses start on app startup and close on shutdown.
+- `requirements.txt` — pinned `mcp>=1.0.0,<2.0.0`.
+
+### What it adds
+
+| Tool | Provider | Notes |
+|------|----------|-------|
+| `maps_geocode` / `maps_reverse_geocode` | Google Maps Geocoding API | address ↔ lat/lng |
+| `maps_directions` | Google Maps Directions API | driving/walking/transit routes |
+| `maps_distance_matrix` | Google Maps Distance Matrix API | many-to-many travel times |
+| `maps_search_places` / `maps_place_details` | Google Maps Places API | POIs near a location |
+| `maps_elevation` | Google Maps Elevation API | terrain altitude |
+
+The orchestrator and the LLM see Maps tools identically to the in-process
+flights/hotels/cars tools — same `MCPServer.list_tools()` / `call_tool()`.
+
+### Caveats (tracked in Phase 7.6)
+
+- The upstream `@modelcontextprotocol/server-google-maps` package is marked
+  **deprecated** on npm. Integration still works; we need a sustainable
+  replacement before production.
+- The current `Dockerfile` is Python-only — production containers won't have
+  `npx`, so the subprocess won't start in Docker today.
+- Subprocess crash recovery is absent — if Node dies mid-session, tools just
+  start failing.
+
+---
+
 ## Payment-provider rationale (why Stripe over alternatives)
 
 | Provider | Fit | Why / why not |
@@ -492,6 +537,44 @@ currently zero.
 | 7.5.5 | Secrets management: stop reading `.env` in prod. Switch `Config` to read from env directly (already does) and document AWS Secrets Manager / GCP Secret Manager / Doppler integration patterns. | 30 min docs |
 | 7.5.6 | Add a `SECURITY.md` with disclosure email + supported-versions table — required by GitHub's security policy badge and by any responsible-disclosure-savvy researcher. | 15 min |
 | 7.5.7 | License audit: `LICENSES.md` exists but pre-dates the Stripe + Amadeus + Langfuse additions. Refresh. | 30 min |
+| 7.5.8 | Tests for `MCPServer.register_mcp_subprocess` / `close` / subprocess-proxy dispatch. Mock `mcp.client.stdio.stdio_client` so CI doesn't need `npx`. | 1 h |
+| 7.5.9 | CLI parity: `cli.py::build_agent` skips `attach_external_mcp_servers`, so `python -m travel_agent.cli` never gets Maps tools. Wire it in or document the gap. | 30 min |
+| 7.5.10 | Add system-prompt guidance for `maps_directions` / `maps_distance_matrix` / `maps_search_places` so the LLM uses them when planning multi-stop trips. | 20 min |
+
+---
+
+### 7.6 External MCP — production hardening
+
+**Why:** Phase 2.6 wired Google Maps in and proved the abstraction holds, but
+the integration carries three real production blockers.
+
+1. **Add Node to the production image.** Current `Dockerfile` is
+   `python:3.12-slim` — no `npx`, so the Maps subprocess silently never
+   starts. Multi-stage build that vendors `node` + the MCP server is the
+   simplest fix.
+2. **Replace the deprecated upstream package.**
+   `@modelcontextprotocol/server-google-maps@0.6.2` is flagged
+   `Package no longer supported` by npm. Options: pin and accept stagnation,
+   fork, or build a ~200-line in-house Python MCP server on top of the
+   `googlemaps` SDK (most teams end up here).
+3. **Subprocess crash recovery.** If Node dies mid-session, every subsequent
+   `maps_*` call fails until the app restarts. Add a supervisor that detects
+   `ClientSession` errors and re-spawns with exponential backoff; expose a
+   circuit-breaker so the LLM is told "maps unavailable" rather than seeing
+   transport errors every turn.
+
+**Operational follow-ups (smaller):**
+- **Cost controls.** Google Maps is billed per call ($5–17 per 1k). Add a
+  per-session counter + hard cap, plus `AsyncToolCache` memoisation for
+  repeated `(tool, args)` lookups in one session.
+- **Tool-name collision policy.** `register_mcp_subprocess` currently
+  warns-and-overwrites. For multi-server setups, namespace-prefix
+  (`maps:geocode`) or hard-fail.
+- **Readiness surface.** Extend `/readyz` to return `503` when any
+  registered subprocess is down so orchestrators rotate the pod out.
+
+**Estimated effort:** Items 1+2+3 are the production minimum (~1 day
+including the in-house Maps server). Operational items: ~½ day each.
 
 ---
 

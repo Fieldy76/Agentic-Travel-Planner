@@ -40,7 +40,11 @@ def select_provider() -> Optional[Tuple[str, str]]:
 
 
 def build_mcp_server() -> MCPServer:
-    """A new MCPServer with all production tools registered."""
+    """A new MCPServer with all production tools registered (in-process only).
+
+    Subprocess MCP servers (Google Maps, etc.) are wired in async at startup;
+    call ``attach_external_mcp_servers`` from the app's lifespan hook.
+    """
     server = MCPServer()
     for tool in (
         search_flights,
@@ -54,6 +58,26 @@ def build_mcp_server() -> MCPServer:
     ):
         server.register_tool(tool)
     return server
+
+
+async def attach_external_mcp_servers(server: MCPServer) -> None:
+    """Spawn any optional MCP subprocesses whose keys are configured.
+
+    Failures are logged but never raised — the in-process tools must still
+    work even if a subprocess won't start (missing binary, bad key, etc.).
+    """
+    if Config.GOOGLE_MAPS_API_KEY:
+        try:
+            await server.register_mcp_subprocess(
+                command="npx",
+                args=["-y", "@modelcontextprotocol/server-google-maps"],
+                env={"GOOGLE_MAPS_API_KEY": Config.GOOGLE_MAPS_API_KEY},
+                label="google-maps",
+            )
+        except Exception:
+            logger.exception("Failed to start Google Maps MCP subprocess; continuing without it")
+    else:
+        logger.info("GOOGLE_MAPS_API_KEY not set; Google Maps MCP subprocess skipped")
 
 
 def build_llm() -> Optional[LLMProvider]:
