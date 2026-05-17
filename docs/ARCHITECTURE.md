@@ -14,7 +14,7 @@ see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 ├── web_server.py                 # FastAPI app, streaming chat, Stripe webhook
 ├── travel_agent/
 │   ├── config.py                 # Env-driven Config + structured JSON logging
-│   ├── setup.py                  # build_llm / build_mcp_server / build_agent
+│   ├── setup.py                  # build_llm / build_mcp_server / attach_external_mcp_servers / build_agent
 │   ├── cli.py                    # Interactive CLI (no web)
 │   ├── agent/
 │   │   ├── orchestrator.py       # The LLM ↔ tools loop
@@ -26,7 +26,7 @@ see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 │   │   └── prompts/system.md     # Externalised system prompt
 │   ├── mcp/
 │   │   ├── protocol.py           # JSON-RPC 2.0 + MCP Pydantic models
-│   │   └── mcp_server.py         # In-process tool registry & dispatcher
+│   │   └── mcp_server.py         # Tool registry & dispatcher (in-process + stdio subprocess)
 │   ├── tools/
 │   │   ├── flights.py            # Amadeus search + Aviasales deeplink
 │   │   ├── hotels.py             # Amadeus Hotel Search v3 + Hotellook deeplink
@@ -38,6 +38,7 @@ see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 │       ├── models.py             # CheckoutRequest / CheckoutResponse / etc.
 │       ├── stripe_client.py      # StripeClient + StripeMockClient
 │       └── service.py            # PaymentService: idempotency, webhook dedup
+├── static/                       # Vanilla HTML/CSS/JS chat UI (no build step)
 ├── scripts/                      # debug_gemini.py, verify_langfuse.py
 ├── tests/                        # pytest-asyncio + respx + freezegun
 └── docs/                         # PRODUCTION_READINESS.md, ARCHITECTURE.md
@@ -48,10 +49,10 @@ see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
 ## Component map
 
 ```
-                ┌───────────────────┐
-   HTTP chat ──▶│ web_server.py     │── NDJSON stream ──▶ browser/CLI
-                │ (FastAPI)         │
-                └─┬──────┬──────┬───┘
+                ┌──────────────────────┐
+   HTTP chat ──▶│ web_server.py        │── NDJSON stream ──▶ browser/CLI
+                │ (FastAPI + lifespan) │
+                └─┬──────┬──────┬──────┘
         per-sess.│      │      │ POST /webhooks/stripe
                  ▼      │      ▼
         ┌──────────────┐│   ┌──────────────────┐
@@ -68,12 +69,20 @@ see [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
    │ MCPServer    │            │  (or Mock)   │
    │ (registry +  │            └──────────────┘
    │  dispatcher) │
-   └──────┬───────┘
-          │
-  ┌──────┬┴───────┬──────────┬──────────┬─────────────┬──────────┐
-  ▼      ▼        ▼          ▼          ▼             ▼          ▼
-flights hotels  cars      weather   create_payment  get_payment datetime
-                                    _session       _status
+   └─┬────────┬───┘
+     │        │ stdio JSON-RPC (optional, key-gated)
+     │        ▼
+     │   ┌──────────────────────┐
+     │   │ npx subprocess       │ ──▶ Google Maps APIs
+     │   │ server-google-maps   │     (geocode, directions,
+     │   │ → maps_* tools       │      distance_matrix, places, ...)
+     │   └──────────────────────┘
+     │ in-process dispatch
+     ▼
+  ┌──────┬───────┬──────────┬──────────┬─────────────┬──────────┐
+  ▼      ▼       ▼          ▼          ▼             ▼          ▼
+flights hotels cars      weather   create_payment  get_payment datetime
+                                   _session       _status
   ▲      ▲        ▲          ▲
   │      │        │          │
   │ Amadeus       │      Open-Meteo
@@ -107,6 +116,10 @@ FastAPI entrypoint. Holds the `SessionManager` (per-session
 Key safeguards: CORS allowlist (no `*`), 25 MB upload cap, MIME magic-byte
 sniffing, per-request `asyncio.timeout(REQUEST_TIMEOUT_SECONDS)`, per-session
 memory isolation.
+
+A FastAPI `lifespan` context manager wires the optional external MCP
+subprocesses on startup (calls `attach_external_mcp_servers`) and shuts them
+down on shutdown (`MCPServer.close()`).
 
 ### `travel_agent/config.py`
 Single source of truth for environment configuration.
@@ -252,6 +265,13 @@ turns into a clean `"Invalid input"` payload).
 `flights.py` and `hotels.py` share an `AmadeusTokenCache` (async-locked OAuth
 token cache that refreshes 60 s before expiry to avoid thundering herd).
 
+When `GOOGLE_MAPS_API_KEY` is set, seven additional tools appear from the
+`@modelcontextprotocol/server-google-maps` subprocess: `maps_geocode`,
+`maps_reverse_geocode`, `maps_directions`, `maps_distance_matrix`,
+`maps_search_places`, `maps_place_details`, `maps_elevation`. They are
+discovered via `tools/list` at app startup and dispatched as proxies — the
+LLM treats them identically to in-process tools.
+
 ### `travel_agent/payments/*`
 A small payments package with a clean provider boundary:
 
@@ -388,14 +408,23 @@ wants to collect directly. The Checkout pattern is the right one for a chat
 agent: the agent hands the user a hosted URL, the user pays, the webhook
 finalises server-side. No card data ever touches our server (PCI scope = 0).
 
-### Why an in-process MCP server instead of stdio MCP?
+### Why both in-process tools and stdio MCP subprocesses?
 The model-context-protocol spec assumes tools live in a separate process and
-the agent talks to them over stdio. That decouples but adds latency, process
-management, and serialization overhead. For a single-process FastAPI app
-serving a chat UI, an in-process registry that exposes the same JSON-RPC
-shape is functionally equivalent and dramatically simpler. The
-`mcp/protocol.py` Pydantic models match the wire format so a future move to
-real stdio MCP is a straight lift-and-shift.
+the agent talks to them over stdio. That's the right answer when the tool
+already exists as an MCP server (Google Maps, filesystem, Postgres) — you get
+language interop, isolation, and the upstream maintainer ships fixes for you.
+
+For tools we own (flights, hotels, cars, weather, payments), starting a
+subprocess per tool adds latency, process management, and serialization
+overhead with no upside — they're Python functions in the same repo. The
+in-process registry handles those; `register_mcp_subprocess` handles the
+external ones. Both populate the same `MCPServer.tools` dict so the
+orchestrator and the LLM see one unified tool list.
+
+Because `mcp/protocol.py`'s Pydantic models match the wire format, the door
+also stays open in the opposite direction: exposing OUR tools *as* an MCP
+server so Claude Desktop / other agents can call them is incremental work,
+not a rewrite.
 
 ### Why per-session orchestrators?
 Memory is per-session because conversations aren't shared across users.
@@ -437,6 +466,28 @@ provider (PayPal, Adyen) — implement the protocol, no test changes.
 3. Register it in `travel_agent/setup.py::build_mcp_server`.
 4. Add tests in `tests/test_tools_<name>.py`.
 5. If non-obvious, add guidance in `travel_agent/agent/prompts/system.md`.
+
+### Adding an external MCP server
+When the tool already exists as an MCP server (Node/Python subprocess
+speaking stdio JSON-RPC), no tool code is required — wire the subprocess into
+`travel_agent/setup.py::attach_external_mcp_servers`:
+
+```python
+if Config.MY_KEY:
+    await server.register_mcp_subprocess(
+        command="npx",
+        args=["-y", "@some-org/server-name"],
+        env={"MY_KEY": Config.MY_KEY},
+        label="my-server",
+    )
+```
+
+Add `MY_KEY` to `Config` (in `travel_agent/config.py`) and to `.env.example`.
+Keep registration key-gated so a fresh clone without the key still boots —
+`attach_external_mcp_servers` wraps failures in a try/except so a misconfigured
+subprocess never crashes the app. Tool discovery (`tools/list`) and dispatch
+(`tools/call`) happen automatically; remote tools appear in
+`MCPServer.list_tools()` alongside the in-process ones.
 
 ### Adding a new LLM provider
 1. Subclass `LLMProvider` in `travel_agent/agent/llm.py`. Implement both
