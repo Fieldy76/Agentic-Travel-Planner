@@ -18,6 +18,10 @@ flights, hotels, cars, weather, and payments.
   `X-Session-Id`.
 - **Production-grade web layer**: streaming NDJSON chat, file upload size
   and MIME-magic-byte validation, CORS allowlist, per-request timeout.
+- **Chat UI**: auto-linkifies raw URLs and auto-opens partner booking pages
+  (Aviasales / Hotellook / RentalCars / Stripe Checkout) in a new tab so the
+  user goes straight to checkout. Per-conversation `X-Session-Id` keeps server
+  memory aligned with the visible chat thread.
 - **Observability** (optional): Langfuse traces every agent turn + LLM call,
   with PII redacted before logging.
 - **Test suite** with ≥70% coverage (pytest-asyncio + respx + freezegun).

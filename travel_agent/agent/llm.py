@@ -278,7 +278,7 @@ class AnthropicProvider(LLMProvider):
         return {"content": content_text, "tool_calls": tool_calls if tool_calls else None}
 
 class GoogleProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         if not genai:
             raise ImportError("Google Generative AI SDK not installed.")
         genai.configure(api_key=api_key)

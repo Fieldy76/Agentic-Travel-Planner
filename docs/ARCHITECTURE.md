@@ -162,10 +162,12 @@ Abstract `LLMProvider` + three implementations:
   `{"__error__": ...}` payload rather than crashing the loop).
 - `AnthropicProvider` — `AsyncAnthropic` messages with content-block
   conversion (`tool_use`, `tool_result`).
-- `GoogleProvider` — `google.generativeai`. Caches `GenerativeModel`
-  instances keyed on `(model_name, system_instruction)` so the model object
-  isn't rebuilt on every call. Tool schema types fall back to `STRING` on
-  unknown values (Gemini is strict about its enum).
+- `GoogleProvider` — `google.generativeai`. Default model is `gemini-2.5-flash`
+  (the `gemini-2.0-flash` default was retired by Google's free-tier quota
+  policy; `2.5-flash` is the current widely-available alternative). Caches
+  `GenerativeModel` instances keyed on `(model_name, system_instruction)` so
+  the model object isn't rebuilt on every call. Tool schema types fall back
+  to `STRING` on unknown values (Gemini is strict about its enum).
 
 Langfuse observability lives in three free functions: `langfuse_trace`,
 `langfuse_generation`, `langfuse_flush`. They handle v2 and v3 SDK shapes
@@ -259,6 +261,20 @@ A small payments package with a clean provider boundary:
 ### `travel_agent/cli.py`
 Thin interactive REPL. Loads config, builds the agent via `setup.build_agent`,
 prints streamed events to stdout.
+
+### `static/`
+The chat UI (vanilla HTML/CSS/JS, no build step). `static/js/app.js`:
+
+- Generates a per-conversation ID (`currentConversationId`) and sends it as
+  the `X-Session-Id` request header on every `POST /api/chat`. This keeps the
+  server-side `SessionManager` aligned with the user-visible thread — new
+  threads get new memory; existing threads recover full history.
+- Renders assistant messages by auto-linkifying both Markdown-style `[text](url)`
+  and raw `http(s)://` URLs.
+- Auto-opens any URL whose host matches `aviasales.com`, `hotellook.com`,
+  `rentalcars.com`, or `checkout.stripe.com` in a new tab so the user lands
+  on the partner's checkout without an extra click. Subject to browser
+  popup-blocker rules — the inline link is the always-clickable fallback.
 
 ---
 

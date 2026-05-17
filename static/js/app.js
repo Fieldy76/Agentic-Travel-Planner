@@ -339,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 // Content-Type is set automatically by browser for FormData with boundary
+                headers: { 'X-Session-Id': currentConversationId },
                 body: formData
             });
 
@@ -397,6 +398,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    const PARTNER_BOOKING_HOSTS = /(aviasales\.com|hotellook\.com|rentalcars\.com|checkout\.stripe\.com)/i;
+
     function appendMessage(role, content) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
@@ -404,17 +407,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
-        // Render Markdown links: [text](url) -> <a href="url" target="_blank">text</a>
-        // Also handle newlines
+        // Linkify markdown links AND raw http(s) URLs in a single pass, then newlines.
         let formattedContent = escapeHtml(content)
-            .replace(/\n/g, '<br>')
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            .replace(
+                /\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"]+)/g,
+                (_m, mdText, mdUrl, rawUrl) => {
+                    const url = mdUrl || rawUrl;
+                    const text = mdText || rawUrl;
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+                }
+            )
+            .replace(/\n/g, '<br>');
 
         contentDiv.innerHTML = formattedContent;
 
         messageDiv.appendChild(contentDiv);
         chatContainer.appendChild(messageDiv);
         scrollToBottom();
+
+        // Auto-open partner booking URLs so the user lands on the provider's
+        // checkout page without an extra click. Browsers may block this if no
+        // recent user gesture is registered; the inline link above is the
+        // fallback in that case.
+        if (role === 'assistant') {
+            const urls = content.match(/https?:\/\/[^\s<>"]+/g) || [];
+            const seen = new Set();
+            for (const u of urls) {
+                if (!seen.has(u) && PARTNER_BOOKING_HOSTS.test(u)) {
+                    seen.add(u);
+                    try { window.open(u, '_blank', 'noopener'); } catch (_) { /* popup blocked */ }
+                }
+            }
+        }
 
         // Update internal state
         conversationMessages.push({ role, content });
